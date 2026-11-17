@@ -10,6 +10,13 @@
 static bool codec_ack_buffer_is_valid(const uint8_t *buffer, size_t length);
 static bool codec_ack_block_is_valid(const struct codec_ack_block *ack_block);
 
+static const uint8_t TFTP_OPCODE_RRQ   = 1;
+static const uint8_t TFTP_OPCODE_WRQ   = 2;
+static const uint8_t TFTP_OPCODE_DATA  = 3;
+static const uint8_t TFTP_OPCODE_ACK   = 4;
+static const uint8_t TFTP_OPCODE_ERROR = 5;
+static const uint8_t TFTP_ACK_PACKET_LENGTH = 4;
+
 /**
  * @brief Decodes a TFTP acknowledgment (ACK) packet.
  *
@@ -55,6 +62,12 @@ bool decode_ack(
         return false;
     }
 
+    // get block number from buffer[2] and buffer[3] in network byte order
+    uint16_t block_number = (buffer[2] << 8) | buffer[3];
+
+    // Assign the decoded block number to the output structure.
+    ack_block->block_number = block_number;
+
     return true;
 }
 
@@ -85,12 +98,12 @@ static bool codec_ack_buffer_is_valid(const uint8_t *buffer, size_t length) {
     }
 
     // Require a complete ACK packet before reading (ACK-FR-003, ACK-SR-003).
-    if (length != 4) {
+    if (length != TFTP_ACK_PACKET_LENGTH) {
         return false;
     }
 
     // Reject an opcode other than 4 (ACK-FR-005).
-    if (buffer[0] != 0 || buffer[1] != 4) {
+    if (buffer[0] != 0 || buffer[1] != TFTP_OPCODE_ACK) {
         return false;
     }
 
