@@ -38,14 +38,63 @@ The implementation will reference the following RFCs:
 | [2349](https://www.rfc-editor.org/rfc/rfc2349) | TFTP Timeout Interval and Transfer Size Options | Timeout and transfer-size negotiation |
 | [7440](https://www.rfc-editor.org/rfc/rfc7440) | TFTP Windowsize Option | Windowed transfers |
 
-Implementation coverage and compliance status will be documented as development progresses.
+The current implementation covers ACK packet decoding only. The remaining protocol behavior and extensions are planned; no complete RFC compliance or interoperability claim is made.
+
+## Implemented Functionality
+
+The C [ACK decoder](src/protocol/codec.c), declared in [codec.h](include/wireforge/tftp/codec.h), provides:
+
+- Validation of the four-byte packet length and ACK opcode (`00 04`).
+- Rejection of null input and output pointers.
+- Decoding of the 16-bit block number in network byte order, including 0 and 65535.
+- Preservation of the output value when decoding fails.
+
+The [unit tests](tests/unit/test_codec_ack.c) cover byte order, boundary block numbers, malformed lengths and opcodes, null pointers, and unchanged output on rejection. These are codec tests; there is no UDP transport, transfer state machine, client, or server yet.
+
+## Build and Test
+
+Requirements: CMake 3.16 or newer, a C99-capable C compiler, and the build tool required by your CMake generator. Run these commands from this repository's root, or from `protocols/wireforge-tftp` when working in the WireForge hub:
+
+```sh
+cmake -S . -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --config Debug
+cd build
+ctest -C Debug --output-on-failure
+cd ..
+```
+
+These commands also work in PowerShell when the compiler and build tools are available in the shell. `CMAKE_BUILD_TYPE` selects Debug for single-configuration generators; `--config Debug` and `-C Debug` select it for multi-configuration generators.
+
+In a POSIX shell, the [test runner](run-tests.sh) performs the same configure, build, and test steps:
+
+```sh
+sh run-tests.sh
+sh run-tests.sh -V
+```
+
+The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake defines one executable target, `test_codec_ack`, and one CTest entry, `codec_ack`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
+
+## ACK Decoder API
+
+```c
+#include "wireforge/tftp/codec.h"
+
+const uint8_t packet[] = {0x00, 0x04, 0x12, 0x34};
+struct codec_ack_block ack = {0};
+bool decoded = decode_ack(packet, sizeof(packet), &ack);
+/* decoded is true; ack.block_number is 0x1234 (4660). */
+```
+
+`decode_ack` returns `true` after writing the decoded block number, or `false` for a null pointer, a length other than four, or an opcode other than ACK. On failure, a supplied output structure is unchanged. The caller must provide readable input storage for the supplied length and a valid writable output structure; non-null pointers alone do not establish memory validity. The decoder does not check whether the block number is expected by a transfer session.
+
+For direct integration, compile `src/protocol/codec.c` with your program and add `include/` to the header search path. The API is preliminary.
 
 ## Planned Features
 
 ### Core Protocol
 
 - Read requests (RRQ) and write requests (WRQ)
-- DATA, ACK, and ERROR packet encoding and decoding
+- DATA and ERROR packet encoding and decoding, plus ACK encoding
 - Binary (`octet`) and text (`netascii`) transfer modes
 - Block numbering and acknowledgment handling
 - Timeout detection and retransmission
@@ -70,7 +119,7 @@ Implementation coverage and compliance status will be documented as development 
 
 ### Verification and Testing
 
-- Packet serialization and parsing tests
+- Packet serialization and parsing tests beyond the existing ACK decoder tests
 - Transfer state-machine tests
 - Client/server integration tests
 - Interoperability testing with established implementations
@@ -96,11 +145,11 @@ The project prioritizes correctness, clarity, and testability over unnecessary a
 
 ## Project Status
 
-**Status: Planning / Initial Development**
+**Status: Initial Development — ACK decoding and unit tests**
 
-The implementation has not yet been released. Features described in this README represent development goals rather than completed functionality.
+ACK decoding and its CMake/CTest unit test target are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
 
-Build instructions, usage examples, and API documentation will be added as the implementation progresses.
+The focused unit tests do not establish protocol-wide compliance, interoperability, or production readiness. Transfer integration tests, fault-injection tests, and a complete requirements compliance matrix remain future work.
 
 ## Contributing
 

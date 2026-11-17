@@ -12,6 +12,13 @@ struct codec_ack_block {
     uint16_t block_number;
 };
 
+/**
+ * Decode a four-byte ACK packet with opcode 4 into a host-order block number.
+ * Returns true after writing ack_block->block_number; returns false for NULL
+ * pointers, invalid length, or invalid opcode, leaving supplied output unchanged.
+ * Non-NULL buffer must refer to at least length readable bytes; non-NULL
+ * ack_block must point to a writable structure. No transfer-state checks occur.
+ */
 bool decode_ack(
     const uint8_t *buffer,
     size_t length,
