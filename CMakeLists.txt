@@ -16,5 +16,18 @@ if(BUILD_TESTING)
     )
     target_include_directories(test_codec_ack PRIVATE include)
     target_compile_features(test_codec_ack PRIVATE c_std_99)
-    add_test(NAME codec_ack COMMAND test_codec_ack)
+    set(codec_ack_tests
+        decode_ack_reads_block_in_network_byte_order
+        decode_ack_rejects_invalid_length
+        decode_ack_rejects_invalid_opcode
+        decode_ack_rejects_null_output_pointer
+        decode_ack_rejects_null_input_pointer
+        decode_ack_rejects_null_input_pointer_with_zero_length
+        decode_ack_rejects_both_null_pointers
+        decode_ack_accepts_boundary_block_numbers
+        decode_ack_preserves_output_on_failure
+    )
+    foreach(test_name IN LISTS codec_ack_tests)
+        add_test(NAME ${test_name} COMMAND test_codec_ack ${test_name})
+    endforeach()
 endif()

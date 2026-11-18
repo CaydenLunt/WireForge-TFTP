@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /**
  * @brief Verifies that valid ACK packets decode in network byte order.
@@ -225,43 +226,35 @@ static bool test_decode_ack_rejects_both_null_pointers(void) {
     return true;
 }
 
-int main(void) {
-    if (!test_decode_ack_reads_block_in_network_byte_order()) {
+int main(int argc, char *argv[]) {
+    const struct {
+        const char *name;
+        bool (*run)(void);
+    } tests[] = {
+#define TEST(name) {#name, test_##name}
+        TEST(decode_ack_reads_block_in_network_byte_order),
+        TEST(decode_ack_rejects_invalid_length),
+        TEST(decode_ack_rejects_invalid_opcode),
+        TEST(decode_ack_rejects_null_output_pointer),
+        TEST(decode_ack_rejects_null_input_pointer),
+        TEST(decode_ack_rejects_null_input_pointer_with_zero_length),
+        TEST(decode_ack_rejects_both_null_pointers),
+        TEST(decode_ack_accepts_boundary_block_numbers),
+        TEST(decode_ack_preserves_output_on_failure)
+#undef TEST
+    };
+
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <test_name>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    if (!test_decode_ack_rejects_invalid_length()) {
-        return EXIT_FAILURE;
+    for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {
+        if (strcmp(argv[1], tests[i].name) == 0) {
+            return tests[i].run() ? EXIT_SUCCESS : EXIT_FAILURE;
+        }
     }
 
-    if (!test_decode_ack_rejects_invalid_opcode()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_decode_ack_rejects_null_output_pointer()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_decode_ack_rejects_null_input_pointer()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_decode_ack_rejects_null_input_pointer_with_zero_length()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_decode_ack_rejects_both_null_pointers()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_decode_ack_accepts_boundary_block_numbers()) {
-        return EXIT_FAILURE;
-    }
-
-    if (!test_decode_ack_preserves_output_on_failure()) {
-        return EXIT_FAILURE;
-    }
-
-    puts("ACK codec tests passed");
-    return EXIT_SUCCESS;
+    fprintf(stderr, "Unknown test: %s\n", argv[1]);
+    return EXIT_FAILURE;
 }

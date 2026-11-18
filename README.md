@@ -72,7 +72,7 @@ sh run-tests.sh
 sh run-tests.sh -V
 ```
 
-The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake defines one executable target, `test_codec_ack`, and one CTest entry, `codec_ack`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
+The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake defines one executable target, `test_codec_ack`, with a separate CTest entry for each of its nine test functions. Each test reports its own result and can be selected by name, for example `sh run-tests.sh -R '^decode_ack_rejects_invalid_opcode$'`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
 
 ## ACK Decoder API
 
