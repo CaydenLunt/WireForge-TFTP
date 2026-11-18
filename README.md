@@ -51,6 +51,8 @@ The C [ACK decoder](src/protocol/codec.c), declared in [codec.h](include/wirefor
 
 The [unit tests](tests/unit/test_codec_ack.c) cover byte order, boundary block numbers, malformed lengths and opcodes, null pointers, and unchanged output on rejection. These are codec tests; there is no UDP transport, transfer state machine, client, or server yet.
 
+DATA decoding is in progress. `decode_data` is currently an empty stub. The internal `codec_data_payload_is_valid` helper checks for a non-null payload pointer and a payload length of 0 through 512 bytes, excluding the packet header. It does not validate the opcode and is not yet called by the decoder or covered by the ACK tests.
+
 ## Build and Test
 
 Requirements: CMake 3.16 or newer, a C99-capable C compiler, and the build tool required by your CMake generator. Run these commands from this repository's root, or from `protocols/wireforge-tftp` when working in the WireForge hub:

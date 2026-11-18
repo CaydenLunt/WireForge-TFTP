@@ -8,14 +8,22 @@
 #include "wireforge/tftp/codec.h"
 
 static bool codec_ack_buffer_is_valid(const uint8_t *buffer, size_t length);
-static bool codec_ack_block_is_valid(const struct codec_ack_block *ack_block);
+static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length);
 
+// Opcodes
 static const uint8_t TFTP_OPCODE_RRQ   = 1;
 static const uint8_t TFTP_OPCODE_WRQ   = 2;
 static const uint8_t TFTP_OPCODE_DATA  = 3;
 static const uint8_t TFTP_OPCODE_ACK   = 4;
 static const uint8_t TFTP_OPCODE_ERROR = 5;
+
+// ack vals
 static const uint8_t TFTP_ACK_PACKET_LENGTH = 4;
+
+// data vals
+static const size_t TFTP_DATA_PAYLOAD_MAX_LENGTH = 512;
+
+#pragma region "ACK Decoder Implementation"
 
 /**
  * @brief Decodes a TFTP acknowledgment (ACK) packet.
@@ -58,7 +66,7 @@ bool decode_ack(
     }
 
     // Reject a NULL output pointer (ACK-SR-002).
-    if (!codec_ack_block_is_valid(ack_block)) {
+    if (ack_block == NULL) {
         return false;
     }
 
@@ -110,31 +118,68 @@ static bool codec_ack_buffer_is_valid(const uint8_t *buffer, size_t length) {
     return true;
 }
 
+#pragma endregion "ACK Decoder Implementation"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#pragma region "DATA Decoder Implementation"
+
 
 /**
- * @brief Checks whether the ACK output pointer is non-NULL.
+ * @brief Decodes a TFTP DATA packet.
  *
  * @details
- * Does not read or modify the output structure, and does not verify that
- * a non-NULL pointer refers to accessible storage.
+ * Implements DATA packet decoding according to RFC 1350,
+ * Section 5, Figure 5-2.
  *
  * Requirements:
- * - ACK-SR-002: Reject a NULL output pointer.
- * - ACK-SR-004: Leave output unchanged during validation.
+ * - DATA-FR-002: Packet must be at least 4 bytes.
+ * - DATA-FR-003: Standard packet must not exceed 516 bytes.
+ * - DATA-FR-004: Opcode must equal 3.
+ * - DATA-FR-005: Decode 16-bit block number in network byte order.
+ * - DATA-FR-006: Accept block numbers 0 through 65535.
+ * - DATA-FR-007: Payload begins at byte offset 4.
+ * - DATA-FR-008: Payload length equals length minus 4.
+ * - DATA-FR-009: Accept payload lengths 0 through 512.
+ * - DATA-FR-010: Preserve payload bytes exactly.
+ * - DATA-SR-001: Reject NULL input buffer.
+ * - DATA-SR-002: Reject NULL output pointer.
+ * - DATA-SR-003: Never read beyond the supplied buffer.
+ * - DATA-SR-004: Do not modify output on failure.
+ * - DATA-SR-005: Do not modify input buffer.
+ * - DATA-SR-006: Keep payload within input buffer bounds.
  *
- * By design:
- * - ACK-FR-007: The uint16_t block-number field represents 0 through 65535;
- *   its previous value does not need a runtime range check.
+ * @param buffer Pointer to the raw TFTP DATA packet.
+ * @param length Number of readable bytes in the buffer.
+ * @param data_block Pointer to the decoded DATA structure.
  *
- * @param ack_block Pointer to the ACK output structure, or NULL.
- *
- * @return true if ack_block is non-NULL; false otherwise.
+ * @return true on success, false on failure.
  */
-static bool codec_ack_block_is_valid(const struct codec_ack_block *ack_block) {
-    // Reject a NULL output pointer (ACK-SR-002).
-    if (ack_block == NULL) {
+bool decode_data(
+    const uint8_t *buffer,
+    size_t length,
+    struct codec_data_block *data_block
+) {
+
+}
+
+/**
+ * @brief Validates a DATA payload pointer and length, excluding the packet header.
+ * @param payload Non-NULL pointer to at least length readable payload bytes.
+ * @param length Payload length in bytes; zero is valid.
+ * @return true for a non-NULL payload with length 0 through 512; false otherwise.
+ */
+static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length) {
+    if (payload == NULL) {
+        return false;
+    }
+
+    // size_t is unsigned, so only the upper bound needs checking (DATA-FR-009).
+    if (length > TFTP_DATA_PAYLOAD_MAX_LENGTH) {
         return false;
     }
 
     return true;
 }
+
+#pragma endregion "DATA Decoder Implementation"
