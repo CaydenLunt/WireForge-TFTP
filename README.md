@@ -55,6 +55,8 @@ DATA decoding is in progress. `decode_data` is currently an empty stub. The inte
 
 ## Build and Test
 
+See the [development and verification guide](docs/development.md) for repository layout, CI, requirement-to-test mapping, known compiler warnings, contribution guidance, and release limitations.
+
 Requirements: CMake 3.16 or newer, a C99-capable C compiler, and the build tool required by your CMake generator. Run these commands from this repository's root, or from `protocols/wireforge-tftp` when working in the WireForge hub:
 
 ```sh
