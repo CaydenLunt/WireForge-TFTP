@@ -38,7 +38,7 @@ The implementation will reference the following RFCs:
 | [2349](https://www.rfc-editor.org/rfc/rfc2349) | TFTP Timeout Interval and Transfer Size Options | Timeout and transfer-size negotiation |
 | [7440](https://www.rfc-editor.org/rfc/rfc7440) | TFTP Windowsize Option | Windowed transfers |
 
-The current implementation covers ACK packet decoding only. The remaining protocol behavior and extensions are planned; no complete RFC compliance or interoperability claim is made.
+The current implementation covers ACK and DATA block-number decoding. The remaining protocol behavior and extensions are planned; no complete RFC compliance or interoperability claim is made.
 
 ## Implemented Functionality
 
@@ -51,7 +51,7 @@ The C [ACK decoder](src/protocol/codec.c), declared in [codec.h](include/wirefor
 
 The [unit tests](tests/unit/test_codec_ack.c) cover byte order, boundary block numbers, malformed lengths and opcodes, null pointers, and unchanged output on rejection. These are codec tests; there is no UDP transport, transfer state machine, client, or server yet.
 
-DATA decoding is in progress. `decode_data` is currently an empty stub. The internal `codec_data_payload_is_valid` helper checks for a non-null payload pointer and a payload length of 0 through 512 bytes, excluding the packet header. It does not validate the opcode and is not yet called by the decoder or covered by the ACK tests.
+ACK and DATA share struct codec_packet. DATA decoding validates opcode 3 and lengths 4 through 516, then decodes the block number; payload fields remain deferred. populate_ack_packet and populate_data_packet validate and initialize a borrowed buffer and length with block_number set to zero, leaving the structure unchanged on failure.
 
 ## Build and Test
 
@@ -76,20 +76,24 @@ sh run-tests.sh
 sh run-tests.sh -V
 ```
 
-The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake defines one executable target, `test_codec_ack`, with a separate CTest entry for each of its nine test functions. Each test reports its own result and can be selected by name, for example `sh run-tests.sh -R '^decode_ack_rejects_invalid_opcode$'`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
+The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake defines a shared packet contract test executable and `test_codec_ack`, with a separate CTest entry for each of its nine ACK test functions. Each test reports its own result and can be selected by name, for example `sh run-tests.sh -R '^decode_ack_rejects_invalid_opcode$'`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
 
-## ACK Decoder API
+## Packet Decoder API
 
 ```c
 #include "wireforge/tftp/codec.h"
 
 const uint8_t packet[] = {0x00, 0x04, 0x12, 0x34};
-struct codec_ack_block ack = {0};
-bool decoded = decode_ack(packet, sizeof(packet), &ack);
+struct codec_packet ack = {packet, sizeof(packet), 0};
+bool decoded = decode_ack(&ack);
 /* decoded is true; ack.block_number is 0x1234 (4660). */
 ```
 
 `decode_ack` returns `true` after writing the decoded block number, or `false` for a null pointer, a length other than four, or an opcode other than ACK. On failure, a supplied output structure is unchanged. The caller must provide readable input storage for the supplied length and a valid writable output structure; non-null pointers alone do not establish memory validity. The decoder does not check whether the block number is expected by a transfer session.
+
+Both decoders take a single writable `struct codec_packet *`. `decode_data(&packet)` validates the DATA opcode and standard length before writing the host-order block number. Successful decoding leaves `buffer` and `length` unchanged; failure leaves all fields unchanged.
+
+`populate_ack_packet(&packet, buffer, length)` and `populate_data_packet(&packet, buffer, length)` validate the appropriate opcode and length before initializing the borrowed buffer, length, and `block_number = 0`. They do not decode the block number. Null pointers or invalid packets return `false` without changing the destination. Keep the buffer alive and readable through decoding. DATA payload pointers and lengths are not yet exposed.
 
 For direct integration, compile `src/protocol/codec.c` with your program and add `include/` to the header search path. The API is preliminary.
 
@@ -98,7 +102,7 @@ For direct integration, compile `src/protocol/codec.c` with your program and add
 ### Core Protocol
 
 - Read requests (RRQ) and write requests (WRQ)
-- DATA and ERROR packet encoding and decoding, plus ACK encoding
+- DATA payload extraction and encoding, ERROR encoding and decoding, and ACK encoding
 - Binary (`octet`) and text (`netascii`) transfer modes
 - Block numbering and acknowledgment handling
 - Timeout detection and retransmission
@@ -149,9 +153,9 @@ The project prioritizes correctness, clarity, and testability over unnecessary a
 
 ## Project Status
 
-**Status: Initial Development — ACK decoding and unit tests**
+**Status: Initial Development — shared ACK/DATA packet API and unit tests**
 
-ACK decoding and its CMake/CTest unit test target are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
+ACK and DATA block-number decoding, validated packet initialization, and two CMake/CTest test targets are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
 
 The focused unit tests do not establish protocol-wide compliance, interoperability, or production readiness. Transfer integration tests, fault-injection tests, and a complete requirements compliance matrix remain future work.
 

@@ -2,10 +2,11 @@
 
 ## Repository layout and scope
 
-- `include/wireforge/tftp/codec.h`: preliminary public ACK structure and decoder contract.
-- `src/protocol/codec.c`: ACK validation and decoding, plus unfinished DATA work.
+- `include/wireforge/tftp/codec.h`: shared packet structure, ACK/DATA decoder contracts, and validated initialization helpers.
+- `src/protocol/codec.c`: ACK/DATA validation, block-number decoding, and packet initialization.
 - `tests/unit/test_codec_ack.c`: nine named ACK tests and their command-line dispatcher.
-- `CMakeLists.txt`: C99 test executable and CTest registration.
+- `tests/unit/test_codec_packet.c`: shared initialization and DATA contract checks.
+- `CMakeLists.txt`: two C99 test executables and ten CTest entries.
 - `run-tests.sh`: POSIX configure/build/test helper; forwards arguments to CTest.
 - `.github/workflows/ci.yml`: Ubuntu 24.04 GCC/Clang build and test matrix, triggered by pushes, pull requests, and manual runs.
 
@@ -44,11 +45,11 @@ Tests exercise the decoder independently of transfer state. Acceptance of ACK bl
 
 ## Known implementation limits
 
-Local verification on November 17, 2026: implementation revision `369cebc59a5ee1f35578ce8c3c34450f30eb322e` with documentation-only working changes, Windows x64, Visual Studio 18 2026 generator, MSVC 19.51.36243.0, Windows SDK 10.0.26100.0. Configured with `BUILD_TESTING=ON` in `build/windows-doc-review`, built Debug, and ran `ctest --test-dir build/windows-doc-review -C Debug --output-on-failure --no-tests=error`: all nine tests passed. Build emitted C4716 for the DATA stub. GCC/Clang, sanitizers, and remote CI results were not verified in this review.
+Local verification on November 19, 2026: refactor working tree, Windows x64, Visual Studio 18 2026 generator, MSVC 19.51.36243.0, Windows SDK 10.0.26100.0. Configured with `BUILD_TESTING=ON` in `build/packet-refactor`, built Debug, and ran `ctest --test-dir build/packet-refactor -C Debug --output-on-failure`: all ten tests passed. The build reported no compiler warnings. GCC/Clang, sanitizers, and remote CI were not verified in this run.
 
-`decode_data` is an empty non-void function, is absent from the public header, and has no defined usable return contract. Its source comment describes intended behavior, not implemented guarantees. Do not call it. MSVC reports C4716 (missing return); other compilers can also warn about unused parameters, constants, the unused DATA helper, or region pragmas. Passing ACK tests does not validate this stub.
+decode_data now uses codec_packet, validates the standard DATA length and opcode, and decodes the block number. Payload extraction remains deferred. The codec_packet_contract test covers population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
 
-`codec_data_payload_is_valid` is private and unused. It checks only a non-null payload pointer and length at most 512, excluding the header. It has no tests and does not establish DATA packet validity. DATA requirement IDs in source comments remain planned.
+codec_data_payload_is_valid retains its pointer-and-length interface and is called during DATA validation. It accepts payload lengths from zero through 512.
 
 There is no UDP transport, transfer state machine, packet encoding, RRQ/WRQ/ERROR handling, negotiated option support, file access, client, or server. No installable library or application target exists. Disabling `BUILD_TESTING` leaves no implementation targets.
 

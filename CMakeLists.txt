@@ -10,6 +10,10 @@ add_compile_options(
 include(CTest)
 
 if(BUILD_TESTING)
+    add_executable(test_codec_packet tests/unit/test_codec_packet.c src/protocol/codec.c)
+    target_include_directories(test_codec_packet PRIVATE include)
+    target_compile_features(test_codec_packet PRIVATE c_std_99)
+    add_test(NAME codec_packet_contract COMMAND test_codec_packet)
     add_executable(test_codec_ack
         tests/unit/test_codec_ack.c
         src/protocol/codec.c

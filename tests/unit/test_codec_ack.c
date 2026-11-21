@@ -29,8 +29,8 @@ static bool test_decode_ack_reads_block_in_network_byte_order(void) {
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-        struct codec_ack_block actual = {0xBEEF};
-        const bool success = decode_ack(cases[i].packet, sizeof(cases[i].packet), &actual);
+        struct codec_packet actual = {cases[i].packet, sizeof(cases[i].packet), 0xBEEF};
+        const bool success = decode_ack(&actual);
         if (!success || actual.block_number != cases[i].expected_block_number) {
             fprintf(stderr, "%s: expected successful decoding of block %u, got success=%d, block=%u\n",
                     __func__, (unsigned int)cases[i].expected_block_number,
@@ -49,9 +49,8 @@ static bool test_decode_ack_reads_block_in_network_byte_order(void) {
  */
 static bool test_decode_ack_rejects_invalid_opcode(void) {
     const uint8_t packet[] = {0x00, 0x03, 0x12, 0x34}; // opcode 3 (DATA)
-    struct codec_ack_block actual = {0};
-
-    const bool success = decode_ack(packet, sizeof(packet), &actual);
+    struct codec_packet actual = {packet, sizeof(packet), 0};
+    const bool success = decode_ack(&actual);
 
     if (success) {
         fprintf(stderr, "%s: expected decoding to fail for invalid opcode\n",
@@ -70,9 +69,8 @@ static bool test_decode_ack_rejects_invalid_opcode(void) {
  */
 static bool test_decode_ack_rejects_invalid_length(void) {
     const uint8_t packet[] = {0x00, 0x04, 0x12}; // length 3 (invalid)
-    struct codec_ack_block actual = {0};
-
-    const bool success = decode_ack(packet, sizeof(packet), &actual);
+    struct codec_packet actual = {packet, sizeof(packet), 0};
+    const bool success = decode_ack(&actual);
 
     if (success) {
         fprintf(stderr, "%s: expected decoding to fail for invalid length\n",
@@ -89,9 +87,7 @@ static bool test_decode_ack_rejects_invalid_length(void) {
  * @returns true if decoding rejects the NULL output pointer; false otherwise.
  */
 static bool test_decode_ack_rejects_null_output_pointer(void) {
-    const uint8_t packet[] = {0x00, 0x04, 0x12, 0x34};
-
-    const bool success = decode_ack(packet, sizeof(packet), NULL);
+    const bool success = decode_ack(NULL);
 
     if (success) {
         fprintf(stderr, "%s: expected decoding to fail for NULL output pointer\n",
@@ -107,9 +103,8 @@ static bool test_decode_ack_rejects_null_output_pointer(void) {
  * @returns true if decoding fails; false otherwise.
  */
 static bool test_decode_ack_rejects_null_input_pointer(void) {
-    struct codec_ack_block actual = {0};
-
-    const bool success = decode_ack(NULL, 4, &actual);
+    struct codec_packet actual = {NULL, 4, 0};
+    const bool success = decode_ack(&actual);
 
     if (success) {
         fprintf(stderr, "%s: expected decoding to fail for NULL input pointer\n",
@@ -125,9 +120,8 @@ static bool test_decode_ack_rejects_null_input_pointer(void) {
  * @returns true if decoding fails; false otherwise.
  */
 static bool test_decode_ack_rejects_null_input_pointer_with_zero_length(void) {
-    struct codec_ack_block actual = {0};
-
-    const bool success = decode_ack(NULL, 0, &actual);
+    struct codec_packet actual = {NULL, 0, 0};
+    const bool success = decode_ack(&actual);
 
     if (success) {
         fprintf(stderr, "%s: expected decoding to fail for NULL input pointer with zero length\n",
@@ -151,8 +145,8 @@ static bool test_decode_ack_accepts_boundary_block_numbers(void) {
     const uint16_t expected[] = {0, UINT16_MAX};
 
     for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i) {
-        struct codec_ack_block actual = {0xBEEF};
-        const bool success = decode_ack(packets[i], sizeof(packets[i]), &actual);
+        struct codec_packet actual = {packets[i], sizeof(packets[i]), 0xBEEF};
+        const bool success = decode_ack(&actual);
         if (!success || actual.block_number != expected[i]) {
             fprintf(stderr, "%s: expected successful decoding of block %u, got success=%d, block=%u\n",
                     __func__, (unsigned int)expected[i], (int)success,
@@ -195,9 +189,9 @@ static bool test_decode_ack_preserves_output_on_failure(void) {
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-        struct codec_ack_block actual = {0xBEEF};
-        const bool success = decode_ack(cases[i].packet, cases[i].length, &actual);
-        if (success || actual.block_number != 0xBEEF) {
+        struct codec_packet actual = {cases[i].packet, cases[i].length, 0xBEEF};
+        const bool success = decode_ack(&actual);
+        if (success || actual.block_number != 0xBEEF || actual.buffer != cases[i].packet || actual.length != cases[i].length) {
             fprintf(stderr, "%s (%s): expected rejection with block unchanged at %u, got success=%d, block=%u\n",
                     __func__, cases[i].name, (unsigned int)0xBEEF,
                     (int)success, (unsigned int)actual.block_number);
@@ -215,7 +209,7 @@ static bool test_decode_ack_preserves_output_on_failure(void) {
  * @returns true if decoding returns false without crashing; false otherwise.
  */
 static bool test_decode_ack_rejects_both_null_pointers(void) {
-    const bool success = decode_ack(NULL, 4, NULL);
+    const bool success = decode_ack(NULL);
 
     if (success) {
         fprintf(stderr, "%s: expected decoding to fail for two NULL pointers\n",

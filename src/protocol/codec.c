@@ -7,7 +7,8 @@
 
 #include "wireforge/tftp/codec.h"
 
-static bool codec_ack_buffer_is_valid(const uint8_t *buffer, size_t length);
+static bool codec_ack_buffer_is_valid(const struct codec_packet *packet);
+static bool codec_data_packet_header_is_valid(const uint8_t *buffer, size_t length);
 static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length);
 
 // Opcodes
@@ -22,6 +23,7 @@ static const uint8_t TFTP_ACK_PACKET_LENGTH = 4;
 
 // data vals
 static const size_t TFTP_DATA_PAYLOAD_MAX_LENGTH = 512;
+static const size_t TFTP_DATA_PACKET_HEADER_LENGTH = 4;
 
 #pragma region "ACK Decoder Implementation"
 
@@ -48,37 +50,29 @@ static const size_t TFTP_DATA_PAYLOAD_MAX_LENGTH = 512;
  * - ACK-SR-004: Validation performs no output writes, so rejection leaves
  *   the output unchanged. Keep any decoded-value assignment after validation.
  * - ACK-FR-003: The 4-byte wire length requires an explicit check; it is
- *   not guaranteed by sizeof(struct codec_ack_block).
+ *   not guaranteed by sizeof(struct codec_packet).
  *
- * @param buffer Pointer to the raw TFTP packet.
- * @param length Number of bytes in the buffer.
- * @param ack_block Pointer to the decoded ACK structure.
+ * @param packet Buffer, length, and decoded block number.
  *
  * @return true on success, false on failure.
  */
-bool decode_ack(
-    const uint8_t *buffer,
-    size_t length,
-    struct codec_ack_block *ack_block
-) {
-    if (!codec_ack_buffer_is_valid(buffer, length)) {
+bool decode_ack(struct codec_packet *packet) {
+    if (!codec_ack_buffer_is_valid(packet)) {
         return false;
     }
-
-    // Reject a NULL output pointer (ACK-SR-002).
-    if (ack_block == NULL) {
-        return false;
-    }
-
-    // get block number from buffer[2] and buffer[3] in network byte order
-    uint16_t block_number = (buffer[2] << 8) | buffer[3];
-
-    // Assign the decoded block number to the output structure.
-    ack_block->block_number = block_number;
-
+    packet->block_number = (uint16_t)((packet->buffer[2] << 8) | packet->buffer[3]);
     return true;
 }
 
+bool populate_ack_packet(struct codec_packet *packet,
+                         const uint8_t *buffer, size_t length) {
+    const struct codec_packet candidate = {buffer, length, 0};
+    if (packet == NULL || !codec_ack_buffer_is_valid(&candidate)) {
+        return false;
+    }
+    *packet = candidate;
+    return true;
+}
 /**
  * @brief Validates the length and opcode of a TFTP ACK packet buffer.
  *
@@ -92,30 +86,18 @@ bool decode_ack(
  * - ACK-SR-001: Reject a NULL input buffer.
  * - ACK-SR-003: Check length before reading within the supplied buffer.
  *
- * @param buffer Pointer to the raw packet, or NULL. A non-NULL pointer
- *               must refer to at least length readable bytes.
- * @param length Number of readable bytes in the buffer.
+ * @param packet Packet with length readable buffer bytes, or NULL.
  *
  * @return true if the buffer is non-NULL, its length is 4, and its opcode
  *         is 4; false otherwise.
  */
-static bool codec_ack_buffer_is_valid(const uint8_t *buffer, size_t length) {
-    // Reject a NULL input buffer before reading it (ACK-SR-001).
-    if (buffer == NULL) {
+static bool codec_ack_buffer_is_valid(const struct codec_packet *packet) {
+    // Validate pointers and exact wire length before reading (ACK-SR-001/002/003).
+    if (packet == NULL || packet->buffer == NULL ||
+        packet->length != TFTP_ACK_PACKET_LENGTH) {
         return false;
     }
-
-    // Require a complete ACK packet before reading (ACK-FR-003, ACK-SR-003).
-    if (length != TFTP_ACK_PACKET_LENGTH) {
-        return false;
-    }
-
-    // Reject an opcode other than 4 (ACK-FR-005).
-    if (buffer[0] != 0 || buffer[1] != TFTP_OPCODE_ACK) {
-        return false;
-    }
-
-    return true;
+    return packet->buffer[0] == 0 && packet->buffer[1] == TFTP_OPCODE_ACK;
 }
 
 #pragma endregion "ACK Decoder Implementation"
@@ -149,18 +131,41 @@ static bool codec_ack_buffer_is_valid(const uint8_t *buffer, size_t length) {
  * - DATA-SR-005: Do not modify input buffer.
  * - DATA-SR-006: Keep payload within input buffer bounds.
  *
- * @param buffer Pointer to the raw TFTP DATA packet.
- * @param length Number of readable bytes in the buffer.
- * @param data_block Pointer to the decoded DATA structure.
+ * @param packet Buffer, length, and decoded block number.
  *
  * @return true on success, false on failure.
  */
-bool decode_data(
-    const uint8_t *buffer,
-    size_t length,
-    struct codec_data_block *data_block
-) {
+bool decode_data(struct codec_packet *packet) {
+    if (packet == NULL ||
+        !codec_data_packet_header_is_valid(packet->buffer, packet->length)) {
+        return false;
+    }
+    packet->block_number = (uint16_t)((packet->buffer[2] << 8) | packet->buffer[3]);
+    return true;
+}
 
+bool populate_data_packet(struct codec_packet *packet,
+                          const uint8_t *buffer, size_t length) {
+    if (packet == NULL || !codec_data_packet_header_is_valid(buffer, length)) {
+        return false;
+    }
+    const struct codec_packet candidate = {buffer, length, 0};
+    *packet = candidate;
+    return true;
+}
+
+static bool codec_data_packet_header_is_valid(const uint8_t *buffer, size_t length) {
+    // Require a complete DATA packet before reading (DATA-FR-002, DATA-SR-003).
+    if (buffer == NULL || length < TFTP_DATA_PACKET_HEADER_LENGTH) {
+        return false;
+    }
+
+    // Reject an opcode other than 3 (DATA-FR-004).
+    if (buffer[0] != 0 || buffer[1] != TFTP_OPCODE_DATA) {
+        return false;
+    }
+
+    return codec_data_payload_is_valid(buffer + TFTP_DATA_PACKET_HEADER_LENGTH, length - TFTP_DATA_PACKET_HEADER_LENGTH);
 }
 
 /**

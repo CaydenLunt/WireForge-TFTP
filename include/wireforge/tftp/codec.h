@@ -1,28 +1,31 @@
 #ifndef WIREFORGE_TFTP_CODEC_H
 #define WIREFORGE_TFTP_CODEC_H
-
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 
-struct codec_ack_block {
-    // ACK-FR-007 (representation): uint16_t provides exactly the range
-    // 0 through 65535, including zero; no runtime range check is needed.
-    // Network-byte-order decoding (ACK-FR-006) is still the decoder's job.
+struct codec_packet {
+    const uint8_t *buffer;
+    size_t length;
     uint16_t block_number;
 };
 
-/**
- * Decode a four-byte ACK packet with opcode 4 into a host-order block number.
- * Returns true after writing ack_block->block_number; returns false for NULL
- * pointers, invalid length, or invalid opcode, leaving supplied output unchanged.
- * Non-NULL buffer must refer to at least length readable bytes; non-NULL
- * ack_block must point to a writable structure. No transfer-state checks occur.
+/*
+ * Decode a host-order block number after validating length and opcode.
+ * Reject NULL packet/buffer. Failure leaves all fields unchanged.
+ * ACK requires 4 bytes; standard DATA requires 4 through 516 bytes.
+ * Caller supplies writable packet storage and length readable buffer bytes.
+ * Buffers are borrowed and never modified. DATA payload fields are deferred.
  */
-bool decode_ack(
-    const uint8_t *buffer,
-    size_t length,
-    struct codec_ack_block *ack_block
-);
+bool decode_ack(struct codec_packet *packet);
+bool decode_data(struct codec_packet *packet);
 
+/*
+ * Validate and initialize buffer, length, and block_number=0 without decoding.
+ * Failure leaves packet unchanged. Buffer must remain readable during decoding.
+ */
+bool populate_ack_packet(struct codec_packet *packet,
+                         const uint8_t *buffer, size_t length);
+bool populate_data_packet(struct codec_packet *packet,
+                          const uint8_t *buffer, size_t length);
 #endif /* WIREFORGE_TFTP_CODEC_H */
