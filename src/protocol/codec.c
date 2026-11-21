@@ -7,7 +7,7 @@
 
 #include "wireforge/tftp/codec.h"
 
-static bool codec_ack_buffer_is_valid(const struct codec_packet *packet);
+static bool codec_ack_buffer_is_valid(const struct codec_ack_packet *packet);
 static bool codec_data_packet_header_is_valid(const uint8_t *buffer, size_t length);
 static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length);
 
@@ -50,13 +50,13 @@ static const size_t TFTP_DATA_PACKET_HEADER_LENGTH = 4;
  * - ACK-SR-004: Validation performs no output writes, so rejection leaves
  *   the output unchanged. Keep any decoded-value assignment after validation.
  * - ACK-FR-003: The 4-byte wire length requires an explicit check; it is
- *   not guaranteed by sizeof(struct codec_packet).
+ *   not guaranteed by sizeof(struct codec_ack_packet).
  *
  * @param packet Buffer, length, and decoded block number.
  *
  * @return true on success, false on failure.
  */
-bool decode_ack(struct codec_packet *packet) {
+bool decode_ack(struct codec_ack_packet *packet) {
     if (!codec_ack_buffer_is_valid(packet)) {
         return false;
     }
@@ -64,9 +64,9 @@ bool decode_ack(struct codec_packet *packet) {
     return true;
 }
 
-bool populate_ack_packet(struct codec_packet *packet,
+bool populate_ack_packet(struct codec_ack_packet *packet,
                          const uint8_t *buffer, size_t length) {
-    const struct codec_packet candidate = {buffer, length, 0};
+    const struct codec_ack_packet candidate = {buffer, length, 0};
     if (packet == NULL || !codec_ack_buffer_is_valid(&candidate)) {
         return false;
     }
@@ -91,7 +91,7 @@ bool populate_ack_packet(struct codec_packet *packet,
  * @return true if the buffer is non-NULL, its length is 4, and its opcode
  *         is 4; false otherwise.
  */
-static bool codec_ack_buffer_is_valid(const struct codec_packet *packet) {
+static bool codec_ack_buffer_is_valid(const struct codec_ack_packet *packet) {
     // Validate pointers and exact wire length before reading (ACK-SR-001/002/003).
     if (packet == NULL || packet->buffer == NULL ||
         packet->length != TFTP_ACK_PACKET_LENGTH) {
@@ -135,21 +135,23 @@ static bool codec_ack_buffer_is_valid(const struct codec_packet *packet) {
  *
  * @return true on success, false on failure.
  */
-bool decode_data(struct codec_packet *packet) {
+bool decode_data(struct codec_data_packet *packet) {
     if (packet == NULL ||
         !codec_data_packet_header_is_valid(packet->buffer, packet->length)) {
         return false;
     }
     packet->block_number = (uint16_t)((packet->buffer[2] << 8) | packet->buffer[3]);
+    packet->payload = packet->buffer + TFTP_DATA_PACKET_HEADER_LENGTH;
+    packet->payload_length = packet->length - TFTP_DATA_PACKET_HEADER_LENGTH;
     return true;
 }
 
-bool populate_data_packet(struct codec_packet *packet,
+bool populate_data_packet(struct codec_data_packet *packet,
                           const uint8_t *buffer, size_t length) {
     if (packet == NULL || !codec_data_packet_header_is_valid(buffer, length)) {
         return false;
     }
-    const struct codec_packet candidate = {buffer, length, 0};
+    const struct codec_data_packet candidate = {buffer, length, 0, NULL, 0};
     *packet = candidate;
     return true;
 }

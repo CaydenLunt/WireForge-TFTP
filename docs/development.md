@@ -2,10 +2,10 @@
 
 ## Repository layout and scope
 
-- `include/wireforge/tftp/codec.h`: shared packet structure, ACK/DATA decoder contracts, and validated initialization helpers.
+- `include/wireforge/tftp/codec.h`: separate ACK and DATA packet structures, ACK/DATA decoder contracts, and validated initialization helpers.
 - `src/protocol/codec.c`: ACK/DATA validation, block-number decoding, and packet initialization.
 - `tests/unit/test_codec_ack.c`: nine named ACK tests and their command-line dispatcher.
-- `tests/unit/test_codec_packet.c`: shared initialization and DATA contract checks.
+- `tests/unit/test_codec_packet.c`: ACK/DATA initialization and DATA contract checks.
 - `CMakeLists.txt`: two C99 test executables and ten CTest entries.
 - `run-tests.sh`: POSIX configure/build/test helper; forwards arguments to CTest.
 - `.github/workflows/ci.yml`: Ubuntu 24.04 GCC/Clang build and test matrix, triggered by pushes, pull requests, and manual runs.
@@ -47,7 +47,7 @@ Tests exercise the decoder independently of transfer state. Acceptance of ACK bl
 
 Local verification on November 19, 2026: refactor working tree, Windows x64, Visual Studio 18 2026 generator, MSVC 19.51.36243.0, Windows SDK 10.0.26100.0. Configured with `BUILD_TESTING=ON` in `build/packet-refactor`, built Debug, and ran `ctest --test-dir build/packet-refactor -C Debug --output-on-failure`: all ten tests passed. The build reported no compiler warnings. GCC/Clang, sanitizers, and remote CI were not verified in this run.
 
-decode_data now uses codec_packet, validates the standard DATA length and opcode, and decodes the block number. Payload extraction remains deferred. The codec_packet_contract test covers population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
+decode_data uses codec_data_packet; decode_ack uses codec_ack_packet. DATA decoding, validates the standard DATA length and opcode, and decodes the block number. DATA-FR-007 and DATA-FR-008 are implemented: payload points to buffer + 4 and payload_length equals length - 4. The codec_packet_contract test checks every payload length from 0 through 512, an exact four-byte empty packet, byte preservation, unchanged fields on rejection, and clearing DATA payload fields during initialization. The codec_packet_contract test covers population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
 
 codec_data_payload_is_valid retains its pointer-and-length interface and is called during DATA validation. It accepts payload lengths from zero through 512.
 

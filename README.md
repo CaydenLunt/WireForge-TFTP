@@ -51,7 +51,7 @@ The C [ACK decoder](src/protocol/codec.c), declared in [codec.h](include/wirefor
 
 The [unit tests](tests/unit/test_codec_ack.c) cover byte order, boundary block numbers, malformed lengths and opcodes, null pointers, and unchanged output on rejection. These are codec tests; there is no UDP transport, transfer state machine, client, or server yet.
 
-ACK and DATA share struct codec_packet. DATA decoding validates opcode 3 and lengths 4 through 516, then decodes the block number; payload fields remain deferred. populate_ack_packet and populate_data_packet validate and initialize a borrowed buffer and length with block_number set to zero, leaving the structure unchanged on failure.
+ACK uses struct codec_ack_packet; DATA uses struct codec_data_packet, which also exposes payload and payload_length. DATA decoding validates opcode 3 and lengths 4 through 516, then decodes the block number; exposes payload at buffer + 4 and payload_length equal to length - 4. populate_ack_packet and populate_data_packet validate and initialize a borrowed buffer and length with block_number set to zero, leaving the structure unchanged on failure.
 
 ## Build and Test
 
@@ -76,7 +76,7 @@ sh run-tests.sh
 sh run-tests.sh -V
 ```
 
-The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake defines a shared packet contract test executable and `test_codec_ack`, with a separate CTest entry for each of its nine ACK test functions. Each test reports its own result and can be selected by name, for example `sh run-tests.sh -R '^decode_ack_rejects_invalid_opcode$'`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
+The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake defines a packet contract test executable and `test_codec_ack`, with a separate CTest entry for each of its nine ACK test functions. Each test reports its own result and can be selected by name, for example `sh run-tests.sh -R '^decode_ack_rejects_invalid_opcode$'`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
 
 ## Packet Decoder API
 
@@ -84,16 +84,16 @@ The runner resolves paths relative to itself, uses `build/`, and forwards extra 
 #include "wireforge/tftp/codec.h"
 
 const uint8_t packet[] = {0x00, 0x04, 0x12, 0x34};
-struct codec_packet ack = {packet, sizeof(packet), 0};
+struct codec_ack_packet ack = {packet, sizeof(packet), 0};
 bool decoded = decode_ack(&ack);
 /* decoded is true; ack.block_number is 0x1234 (4660). */
 ```
 
 `decode_ack` returns `true` after writing the decoded block number, or `false` for a null pointer, a length other than four, or an opcode other than ACK. On failure, a supplied output structure is unchanged. The caller must provide readable input storage for the supplied length and a valid writable output structure; non-null pointers alone do not establish memory validity. The decoder does not check whether the block number is expected by a transfer session.
 
-Both decoders take a single writable `struct codec_packet *`. `decode_data(&packet)` validates the DATA opcode and standard length before writing the host-order block number. Successful decoding leaves `buffer` and `length` unchanged; failure leaves all fields unchanged.
+The decoders take distinct writable types: `decode_ack(struct codec_ack_packet *)` and `decode_data(struct codec_data_packet *)`. `decode_data(&packet)` validates the DATA opcode and standard length before writing the host-order block number. Successful decoding leaves `buffer` and `length` unchanged; failure leaves all fields unchanged.
 
-`populate_ack_packet(&packet, buffer, length)` and `populate_data_packet(&packet, buffer, length)` validate the appropriate opcode and length before initializing the borrowed buffer, length, and `block_number = 0`. They do not decode the block number. Null pointers or invalid packets return `false` without changing the destination. Keep the buffer alive and readable through decoding. DATA payload pointers and lengths are not yet exposed.
+`populate_ack_packet(&packet, buffer, length)` and `populate_data_packet(&packet, buffer, length)` validate the appropriate opcode and length before initializing the borrowed buffer, length, and `block_number = 0`. They do not decode the block number. Null pointers or invalid packets return `false` without changing the destination. Keep the buffer alive and readable through decoding. Successful DATA decoding exposes a borrowed payload pointer at byte offset 4 and payload_length equal to packet length minus 4 (0 through 512). Keep the buffer alive while accessing the payload. Empty DATA has a one-past-end payload pointer that must not be dereferenced. DATA initialization clears payload to NULL and payload_length to zero. ACK packets have no payload fields.
 
 For direct integration, compile `src/protocol/codec.c` with your program and add `include/` to the header search path. The API is preliminary.
 
@@ -102,7 +102,7 @@ For direct integration, compile `src/protocol/codec.c` with your program and add
 ### Core Protocol
 
 - Read requests (RRQ) and write requests (WRQ)
-- DATA payload extraction and encoding, ERROR encoding and decoding, and ACK encoding
+- DATA encoding, ERROR encoding and decoding, and ACK encoding
 - Binary (`octet`) and text (`netascii`) transfer modes
 - Block numbering and acknowledgment handling
 - Timeout detection and retransmission
@@ -153,7 +153,7 @@ The project prioritizes correctness, clarity, and testability over unnecessary a
 
 ## Project Status
 
-**Status: Initial Development — shared ACK/DATA packet API and unit tests**
+**Status: Initial Development — separate ACK/DATA packet APIs and unit tests**
 
 ACK and DATA block-number decoding, validated packet initialization, and two CMake/CTest test targets are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
 
