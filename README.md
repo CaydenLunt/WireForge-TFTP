@@ -38,7 +38,7 @@ The implementation will reference the following RFCs:
 | [2349](https://www.rfc-editor.org/rfc/rfc2349) | TFTP Timeout Interval and Transfer Size Options | Timeout and transfer-size negotiation |
 | [7440](https://www.rfc-editor.org/rfc/rfc7440) | TFTP Windowsize Option | Windowed transfers |
 
-The current implementation covers ACK and DATA block-number decoding. The remaining protocol behavior and extensions are planned; no complete RFC compliance or interoperability claim is made.
+The current implementation covers ACK and DATA block-number decoding, validated packet initialization, and borrowed DATA payload access. The remaining protocol behavior and extensions are planned; no complete RFC compliance or interoperability claim is made.
 
 ## Implemented Functionality
 
@@ -51,7 +51,7 @@ The C [ACK decoder](src/protocol/codec.c), declared in [codec.h](include/wirefor
 
 The [unit tests](tests/unit/test_codec_ack.c) cover byte order, boundary block numbers, malformed lengths and opcodes, null pointers, and unchanged output on rejection. These are codec tests; there is no UDP transport, transfer state machine, client, or server yet.
 
-ACK uses struct codec_ack_packet; DATA uses struct codec_data_packet, which also exposes payload and payload_length. DATA decoding validates opcode 3 and lengths 4 through 516, then decodes the block number; exposes payload at buffer + 4 and payload_length equal to length - 4. populate_ack_packet and populate_data_packet validate and initialize a borrowed buffer and length with block_number set to zero, leaving the structure unchanged on failure.
+ACK uses `struct codec_ack_packet`; DATA uses `struct codec_data_packet`, which also exposes `payload` and `payload_length`. DATA decoding validates opcode 3 and lengths 4 through 516, then decodes the block number and exposes the payload at `buffer + 4` with `payload_length = length - 4`. The initialization helpers validate and initialize a borrowed buffer and length with `block_number` set to zero, leaving the structure unchanged on failure.
 
 ## Build and Test
 
@@ -127,7 +127,7 @@ For direct integration, compile `src/protocol/codec.c` with your program and add
 
 ### Verification and Testing
 
-- Packet serialization and parsing tests beyond the existing ACK decoder tests
+- Packet serialization and parsing tests beyond the existing ACK and DATA codec tests
 - Transfer state-machine tests
 - Client/server integration tests
 - Interoperability testing with established implementations
@@ -155,7 +155,7 @@ The project prioritizes correctness, clarity, and testability over unnecessary a
 
 **Status: Initial Development — separate ACK/DATA packet APIs and unit tests**
 
-ACK and DATA block-number decoding, validated packet initialization, and two CMake/CTest test targets are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
+ACK and DATA block-number decoding, borrowed DATA payload access, validated packet initialization, and two test executables with ten CTest entries are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
 
 The focused unit tests do not establish protocol-wide compliance, interoperability, or production readiness. Transfer integration tests, fault-injection tests, and a complete requirements compliance matrix remain future work.
 

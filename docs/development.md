@@ -45,9 +45,9 @@ Tests exercise the decoder independently of transfer state. Acceptance of ACK bl
 
 ## Known implementation limits
 
-Local verification on November 19, 2026: refactor working tree, Windows x64, Visual Studio 18 2026 generator, MSVC 19.51.36243.0, Windows SDK 10.0.26100.0. Configured with `BUILD_TESTING=ON` in `build/packet-refactor`, built Debug, and ran `ctest --test-dir build/packet-refactor -C Debug --output-on-failure`: all ten tests passed. The build reported no compiler warnings. GCC/Clang, sanitizers, and remote CI were not verified in this run.
+Local verification on November 21, 2026: implementation revision `2d3d362266e1cbcbc299aeda8ba87d329a982886`, Windows x64, Visual Studio 18 2026 generator, MSVC 19.51.36243.0, Windows SDK 10.0.26100.0. Configured with `BUILD_TESTING=ON` in `build/windows-doc-sync`, built Debug, and ran `ctest --test-dir build/windows-doc-sync -C Debug --output-on-failure`: all ten tests passed. The build reported no compiler warnings. GCC/Clang, sanitizers, and remote CI were not verified in this run.
 
-decode_data uses codec_data_packet; decode_ack uses codec_ack_packet. DATA decoding, validates the standard DATA length and opcode, and decodes the block number. DATA-FR-007 and DATA-FR-008 are implemented: payload points to buffer + 4 and payload_length equals length - 4. The codec_packet_contract test checks every payload length from 0 through 512, an exact four-byte empty packet, byte preservation, unchanged fields on rejection, and clearing DATA payload fields during initialization. The codec_packet_contract test covers population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
+`decode_data` uses `codec_data_packet`; `decode_ack` uses `codec_ack_packet`. DATA decoding validates the standard DATA length and opcode, and decodes the block number. DATA-FR-007 and DATA-FR-008 are implemented: payload points to buffer + 4 and payload_length equals length - 4. The codec_packet_contract test checks every payload length from 0 through 512, an exact four-byte empty packet, byte preservation, unchanged fields on rejection, and clearing DATA payload fields during initialization. The codec_packet_contract test covers population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
 
 codec_data_payload_is_valid retains its pointer-and-length interface and is called during DATA validation. It accepts payload lengths from zero through 512.
 
@@ -55,7 +55,7 @@ There is no UDP transport, transfer state machine, packet encoding, RRQ/WRQ/ERRO
 
 ## Contribution and release expectations
 
-Keep changes focused, document the affected RFC section or local API rule, add relevant regression tests, and update this matrix and the README when behavior changes. Run the documented build and all tests; report toolchain, revision, failures, warnings, and tests not run. Never describe planned DATA behavior as verified.
+Keep changes focused, document the affected RFC section or local API rule, add relevant regression tests, and update this matrix and the README when behavior changes. Run the documented build and all tests; report toolchain, revision, failures, warnings, and tests not run. Distinguish verified codec behavior from planned transfer and extension behavior.
 
 The API is preliminary and no stable compatibility promise or automated release/package workflow is defined. Before a release, maintainers must choose a versioning policy, document supported platforms and breaking changes, and record revision-specific build and test evidence. There is no release command to run today.
 
