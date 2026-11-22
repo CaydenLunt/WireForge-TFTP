@@ -2,10 +2,11 @@
 
 ## Repository layout and scope
 
-- `include/wireforge/tftp/codec.h`: separate ACK and DATA packet structures, ACK/DATA decoder contracts, and validated initialization helpers.
-- `src/protocol/codec.c`: ACK/DATA validation, block-number decoding, and packet initialization.
+- `include/wireforge/tftp/codec.h`: separate ACK, DATA, and ERROR packet structures and decoder contracts, and validated initialization helpers.
+- `src/protocol/codec.c`: ACK/DATA/ERROR validation, field decoding, and packet initialization. Private field helpers accept the start of a validated buffer and return the opcode, block number, or error code; they are not public API.
 - `tests/unit/test_codec_ack.c`: nine named ACK tests and their command-line dispatcher.
 - `tests/unit/test_codec_packet.c`: ACK/DATA initialization and DATA contract checks.
+- `tests/unit/test_codec_error.c`: twelve named ERROR tests and their command-line dispatcher.
 - `CMakeLists.txt`: three C99 test executables and 33 individually reported CTest entries.
 - `run-tests.sh`: POSIX configure/build/test helper; forwards arguments to CTest.
 - `.github/workflows/ci.yml`: Ubuntu 24.04 GCC/Clang build and test matrix, triggered by pushes, pull requests, and manual runs.
@@ -14,7 +15,7 @@ There are no third-party runtime libraries or package lockfiles. Build tools and
 
 ## Build, select, and troubleshoot tests
 
-Follow the [README build instructions](../README.md#build-and-test). List test names with `ctest -N` in the build directory. Run one test with `ctest -C Debug --output-on-failure -R '^decode_ack_rejects_invalid_opcode$'`. The executable requires exactly one test name; invoking it without a name or with an unknown name fails.
+Follow the [README build instructions](../README.md#build-and-test). List test names with `ctest -N` in the build directory. Run one test with `ctest -C Debug --output-on-failure -R '^decode_ack_rejects_invalid_opcode$'`. Each test executable requires exactly one test name; invoking it without a name or with an unknown name fails.
 
 On Windows, use a Visual Studio developer shell with CMake and the C++ build tools installed (the project itself uses C). If CMake is not on PATH, invoke its installed executable by full path. Do not share a CMake cache between Windows and WSL or between generators. Use separate build directories, for example:
 
@@ -43,6 +44,24 @@ The IDs below are project identifiers used in source comments, not identifiers a
 
 Tests exercise the decoder independently of transfer state. Acceptance of ACK block zero does not implement the initial WRQ exchange. Full specification inventory, errata disposition, session requirements, interoperability, and fault-injection evidence remain outstanding.
 
+## DATA requirements and evidence
+
+| IDs | Behavior | CTest evidence |
+|---|---|---|
+| DATA-FR-002/003/009 | Packet lengths 4 through 516; payload lengths 0 through 512 | `decode_data_validates_lengths_and_preserves_payload`, `populate_data_packet_validates_lengths` |
+| DATA-FR-004 | Both opcode bytes validated | `decode_data_rejects_invalid_opcode` |
+| DATA-FR-005/006 | Host-order 16-bit block | `decode_data_validates_lengths_and_preserves_payload` checks 0xabcd; full boundary enumeration is not tested for DATA |
+| DATA-FR-007/008/010 | Borrow payload at offset 4, correct length, preserve bytes | `decode_data_validates_lengths_and_preserves_payload`, `decode_data_accepts_empty_payload` |
+| DATA-SR-001/002 | Null input/output rejected | `decode_data_rejects_null_input`, `decode_data_rejects_null_output` |
+| DATA-SR-003/006 | Validate bounds before reads and borrowed access | Source inspection and length cases; no sanitizer proof |
+| DATA-SR-004/005 | Preserve fields on rejection and input bytes | `decode_data_validates_lengths_and_preserves_payload`, invalid-opcode and null-input tests |
+| Local initialization contract | Validate then clear decoded fields; preserve destination on failure | `populate_data_packet_initializes_fields`, `populate_data_packet_preserves_output_on_failure`, `populate_data_packet_rejects_null_output` |
+
+ACK initialization is covered separately by `populate_ack_packet_initializes_fields`,
+`populate_ack_packet_preserves_output_on_failure`, and
+`populate_ack_packet_rejects_null_output`. Table-driven cases remain inside their
+named test functions; CTest reports one result per function.
+
 ## ERROR decoding
 
 ERROR decoding follows [RFC 1350 section 5, Figure 5-4](https://www.rfc-editor.org/rfc/rfc1350#section-5).
@@ -62,16 +81,16 @@ limit applies. Local strict framing requires the first NUL to be the final byte.
 | Both entry points preserve every field on failure | All `error_packet_rejects_*` tests |
 | Validated initialization | `populate_error_packet_initializes_fields` |
 
-Local verification on November 21, 2026: WSL build via `sh run-tests.sh`;
+Local verification on November 21, 2026 of the ERROR implementation now committed as `63df8a1fbab578c4af51b6925b87337d2321bcfa`: WSL build via `sh run-tests.sh`;
 all 33 individually registered tests passed, including 12 ERROR tests.
 Existing unused RRQ/WRQ constants and an ACK test initializer still produce warnings.
 This does not verify session-level ERROR handling or interoperability.
 
 ## Known implementation limits
 
-Local verification on November 21, 2026: implementation revision `2d3d362266e1cbcbc299aeda8ba87d329a982886`, Windows x64, Visual Studio 18 2026 generator, MSVC 19.51.36243.0, Windows SDK 10.0.26100.0. Configured with `BUILD_TESTING=ON` in `build/windows-doc-sync`, built Debug, and ran `ctest --test-dir build/windows-doc-sync -C Debug --output-on-failure`: all ten tests passed. The build reported no compiler warnings. GCC/Clang, sanitizers, and remote CI were not verified in this run.
+Historical verification (not the current implementation) on November 21, 2026: implementation revision `2d3d362266e1cbcbc299aeda8ba87d329a982886`, Windows x64, Visual Studio 18 2026 generator, MSVC 19.51.36243.0, Windows SDK 10.0.26100.0. Configured with `BUILD_TESTING=ON` in `build/windows-doc-sync`, built Debug, and ran `ctest --test-dir build/windows-doc-sync -C Debug --output-on-failure`: all ten tests passed. The build reported no compiler warnings. GCC/Clang, sanitizers, and remote CI were not verified in this run.
 
-`decode_data` uses `codec_data_packet`; `decode_ack` uses `codec_ack_packet`. DATA decoding validates the standard DATA length and opcode, and decodes the block number. DATA-FR-007 and DATA-FR-008 are implemented: payload points to buffer + 4 and payload_length equals length - 4. The named packet contract tests checks every payload length from 0 through 512, an exact four-byte empty packet, byte preservation, unchanged fields on rejection, and clearing DATA payload fields during initialization. The named packet contract tests covers population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
+`decode_data` uses `codec_data_packet`; `decode_ack` uses `codec_ack_packet`. DATA decoding validates the standard DATA length and opcode, and decodes the block number. DATA-FR-007 and DATA-FR-008 are implemented: payload points to buffer + 4 and payload_length equals length - 4. The named packet contract tests check every payload length from 0 through 512, an exact four-byte empty packet, byte preservation, unchanged fields on rejection, and clearing DATA payload fields during initialization. The named packet contract tests cover population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
 
 codec_data_payload_is_valid retains its pointer-and-length interface and is called during DATA validation. It accepts payload lengths from zero through 512.
 

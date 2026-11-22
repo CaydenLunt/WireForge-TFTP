@@ -76,7 +76,7 @@ sh run-tests.sh
 sh run-tests.sh -V
 ```
 
-The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake defines a packet contract test executable and `test_codec_ack`, with a separate CTest entry for each of its nine ACK test functions. Each test reports its own result and can be selected by name, for example `sh run-tests.sh -R '^decode_ack_rejects_invalid_opcode$'`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
+The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake builds three test executables: `test_codec_ack` (9 tests), `test_codec_packet` (12 tests), and `test_codec_error` (12 tests). Each of the 33 test functions has a separate CTest entry; table-driven cases within a function share its result. Each test reports its own result and can be selected by name, for example `sh run-tests.sh -R '^decode_ack_rejects_invalid_opcode$'`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
 
 ## Packet Decoder API
 
@@ -91,9 +91,25 @@ bool decoded = decode_ack(&ack);
 
 `decode_ack` returns `true` after writing the decoded block number, or `false` for a null pointer, a length other than four, or an opcode other than ACK. On failure, a supplied output structure is unchanged. The caller must provide readable input storage for the supplied length and a valid writable output structure; non-null pointers alone do not establish memory validity. The decoder does not check whether the block number is expected by a transfer session.
 
-The decoders take distinct writable types: `decode_ack(struct codec_ack_packet *)` and `decode_data(struct codec_data_packet *)`. `decode_data(&packet)` validates the DATA opcode and standard length before writing the host-order block number. Successful decoding leaves `buffer` and `length` unchanged; failure leaves all fields unchanged.
+The decoders take distinct writable types: `decode_ack(struct codec_ack_packet *)`, `decode_data(struct codec_data_packet *)`, and `decode_error(struct codec_error_packet *)`. `decode_data(&packet)` validates the DATA opcode and standard length before writing the host-order block number. Successful decoding leaves `buffer` and `length` unchanged; failure leaves all fields unchanged.
 
 `populate_ack_packet(&packet, buffer, length)` and `populate_data_packet(&packet, buffer, length)` validate the appropriate opcode and length before initializing the borrowed buffer, length, and `block_number = 0`. They do not decode the block number. Null pointers or invalid packets return `false` without changing the destination. Keep the buffer alive and readable through decoding. Successful DATA decoding exposes a borrowed payload pointer at byte offset 4 and payload_length equal to packet length minus 4 (0 through 512). Keep the buffer alive while accessing the payload. Empty DATA has a one-past-end payload pointer that must not be dereferenced. DATA initialization clears payload to NULL and payload_length to zero. ACK packets have no payload fields.
+
+ERROR uses `struct codec_error_packet`. `populate_error_packet(&packet, buffer, length)` validates opcode 5, a minimum length of five bytes, and a message whose first NUL is the final packet byte. It stores the borrowed buffer and length, setting `error_code = 0`, `error_message = NULL`, and `error_message_length = 0`. `decode_error(&packet)` performs the same validation and exposes the host-order error code and message at `buffer + 4`, with length `packet.length - 5` excluding the terminator. Both functions return `true` on success, reject null pointers, and preserve all fields on failure.
+
+Empty messages and all 16-bit error codes, including unknown codes, are accepted. Message bytes are preserved without netascii validation or conversion. ERROR has no DATA-style 512-byte limit. No memory is allocated or copied; the input buffer must remain alive and readable while accessing the message. Do not free the borrowed message separately. Session-level interpretation of errors remains unimplemented.
+
+```c
+const uint8_t error_bytes[] = {0, 5, 0, 1, 'M', 'i', 's', 's', 'i', 'n', 'g', 0};
+struct codec_error_packet error = {0};
+if (populate_error_packet(&error, error_bytes, sizeof(error_bytes)) &&
+    decode_error(&error)) {
+    /* error.error_code == 1; error.error_message_length == 7. */
+    /* error.error_message points to "Missing" inside error_bytes. */
+}
+```
+
+The [ERROR tests](tests/unit/test_codec_error.c) exercise valid codes/messages, null pointers, truncated headers, invalid opcodes, missing terminators, trailing bytes, and unchanged output on failure.
 
 For direct integration, compile `src/protocol/codec.c` with your program and add `include/` to the header search path. The API is preliminary.
 
@@ -127,7 +143,7 @@ For direct integration, compile `src/protocol/codec.c` with your program and add
 
 ### Verification and Testing
 
-- Packet serialization and parsing tests beyond the existing ACK and DATA codec tests
+- Packet serialization and parsing tests beyond the existing ACK, DATA, and ERROR codec tests
 - Transfer state-machine tests
 - Client/server integration tests
 - Interoperability testing with established implementations
@@ -153,9 +169,9 @@ The project prioritizes correctness, clarity, and testability over unnecessary a
 
 ## Project Status
 
-**Status: Initial Development — separate ACK/DATA packet APIs and unit tests**
+**Status: Initial Development — ACK/DATA/ERROR packet APIs and unit tests**
 
-ACK and DATA block-number decoding, borrowed DATA payload access, validated packet initialization, and two test executables with ten CTest entries are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
+ACK/DATA block decoding, ERROR code/message decoding, borrowed payload/message access, validated initialization, and three test executables with 33 CTest entries are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
 
 The focused unit tests do not establish protocol-wide compliance, interoperability, or production readiness. Transfer integration tests, fault-injection tests, and a complete requirements compliance matrix remain future work.
 
