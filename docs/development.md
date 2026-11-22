@@ -47,8 +47,8 @@ Tests exercise the decoder independently of transfer state. Acceptance of ACK bl
 
 ## DATA requirements and evidence
 
-| IDs | Behavior | CTest evidence |
-|---|---|---|
+| IDs | IDs | Behavior | CTest evidence |
+|---|---|---|---|
 | DATA-FR-002/003/009 | Packet lengths 4 through 516; payload lengths 0 through 512 | `decode_data_validates_lengths_and_preserves_payload`, `populate_data_packet_validates_lengths` |
 | DATA-FR-004 | Both opcode bytes validated | `decode_data_rejects_invalid_opcode` |
 | DATA-FR-005/006 | Host-order 16-bit block | `decode_data_validates_lengths_and_preserves_payload` checks 0xabcd; full boundary enumeration is not tested for DATA |
@@ -69,22 +69,26 @@ ERROR decoding follows [RFC 1350 section 5, Figure 5-4](https://www.rfc-editor.o
 The decoder borrows the message without netascii validation or conversion and
 preserves unknown 16-bit codes. Empty messages are accepted and no DATA-size
 limit applies. Local strict framing requires the first NUL to be the final byte.
+The ERROR IDs below match the requirements block and inline references in
+`src/protocol/codec.c`. They distinguish wire-format requirements from local API
+policies. Bounded-read claims also rely on source inspection; these tests are not
+sanitizer or exhaustive memory-safety evidence.
 
-| Behavior | CTest evidence |
-|---|---|
-| Code byte order, borrowed message, unchanged input | `decode_error_reads_code_and_message` |
-| Empty and long messages | `decode_error_accepts_empty_message`, `decode_error_accepts_long_message` |
-| Known and unknown codes | `decode_error_accepts_known_and_unknown_codes` |
-| Null output | `decode_error_rejects_null_output`, `populate_error_packet_rejects_null_output` |
-| Null input and short headers | `error_packet_rejects_null_input`, `error_packet_rejects_truncated_header` |
-| Both opcode bytes | `error_packet_rejects_invalid_opcode` |
-| Final terminator, no trailing bytes | `error_packet_rejects_missing_terminator`, `error_packet_rejects_trailing_bytes` |
-| Both entry points preserve every field on failure | All `error_packet_rejects_*` tests |
-| Validated initialization | `populate_error_packet_initializes_fields` |
+| IDs | Behavior | CTest evidence |
+|---|---|---|
+| ERROR-FR-003/004/006/008, ERROR-SR-005/006 | Code byte order, borrowed message, unchanged input | `decode_error_reads_code_and_message` |
+| ERROR-FR-007/009 | Empty and long messages | `decode_error_accepts_empty_message`, `decode_error_accepts_long_message` |
+| ERROR-FR-007 | Known and unknown codes | `decode_error_accepts_known_and_unknown_codes` |
+| ERROR-SR-002 | Null output | `decode_error_rejects_null_output`, `populate_error_packet_rejects_null_output` |
+| ERROR-FR-001, ERROR-SR-001/003 | Null input and short headers | `error_packet_rejects_null_input`, `error_packet_rejects_truncated_header` |
+| ERROR-FR-002 | Both opcode bytes | `error_packet_rejects_invalid_opcode` |
+| ERROR-FR-004/005, ERROR-SR-003 | Final terminator, no trailing bytes | `error_packet_rejects_missing_terminator`, `error_packet_rejects_trailing_bytes` |
+| ERROR-SR-004 | Both entry points preserve every field on failure | All `error_packet_rejects_*` tests |
+| Local initialization contract | Validated initialization | `populate_error_packet_initializes_fields` |
 
-Local verification on November 21, 2026 of the ERROR implementation now committed as `63df8a1fbab578c4af51b6925b87337d2321bcfa`: WSL build via `sh run-tests.sh`;
+Local verification on November 21, 2026 of revision `980a26235b7d648400c8e762bdca5d2e66df77cf`: WSL build via `sh run-tests.sh`;
 all 33 individually registered tests passed, including 12 ERROR tests.
-Existing unused RRQ/WRQ constants and an ACK test initializer still produce warnings.
+This build reported unused RRQ/WRQ constant warnings. The existing ACK test initializer warning can also appear when that test source is rebuilt.
 This does not verify session-level ERROR handling or interoperability.
 
 ## Known implementation limits
