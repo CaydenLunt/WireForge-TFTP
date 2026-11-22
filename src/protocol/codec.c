@@ -25,6 +25,18 @@ static const uint8_t TFTP_ACK_PACKET_LENGTH = 4;
 static const size_t TFTP_DATA_PAYLOAD_MAX_LENGTH = 512;
 static const size_t TFTP_DATA_PACKET_HEADER_LENGTH = 4;
 
+/* Return the packet opcode in host order; requires two readable bytes. */
+static uint16_t get_opcode(const uint8_t *buffer) {
+    return (uint16_t)(((uint16_t)buffer[0] << 8) | buffer[1]);
+}
+
+/* Return the ACK/DATA block number in host order.
+ * Caller must supply a validated ACK or DATA buffer with four readable bytes.
+ */
+static uint16_t get_block_number(const uint8_t *buffer) {
+    return (uint16_t)(((uint16_t)buffer[2] << 8) | buffer[3]);
+}
+
 #pragma region "ACK Decoder Implementation"
 
 /**
@@ -60,7 +72,7 @@ bool decode_ack(struct codec_ack_packet *packet) {
     if (!codec_ack_buffer_is_valid(packet)) {
         return false;
     }
-    packet->block_number = (uint16_t)((packet->buffer[2] << 8) | packet->buffer[3]);
+    packet->block_number = get_block_number(packet->buffer);
     return true;
 }
 
@@ -97,7 +109,7 @@ static bool codec_ack_buffer_is_valid(const struct codec_ack_packet *packet) {
         packet->length != TFTP_ACK_PACKET_LENGTH) {
         return false;
     }
-    return packet->buffer[0] == 0 && packet->buffer[1] == TFTP_OPCODE_ACK;
+    return get_opcode(packet->buffer) == TFTP_OPCODE_ACK;
 }
 
 #pragma endregion "ACK Decoder Implementation"
@@ -140,7 +152,7 @@ bool decode_data(struct codec_data_packet *packet) {
         !codec_data_packet_header_is_valid(packet->buffer, packet->length)) {
         return false;
     }
-    packet->block_number = (uint16_t)((packet->buffer[2] << 8) | packet->buffer[3]);
+    packet->block_number = get_block_number(packet->buffer);
     packet->payload = packet->buffer + TFTP_DATA_PACKET_HEADER_LENGTH;
     packet->payload_length = packet->length - TFTP_DATA_PACKET_HEADER_LENGTH;
     return true;
@@ -163,7 +175,7 @@ static bool codec_data_packet_header_is_valid(const uint8_t *buffer, size_t leng
     }
 
     // Reject an opcode other than 3 (DATA-FR-004).
-    if (buffer[0] != 0 || buffer[1] != TFTP_OPCODE_DATA) {
+    if (get_opcode(buffer) != TFTP_OPCODE_DATA) {
         return false;
     }
 
@@ -190,3 +202,15 @@ static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length) {
 }
 
 #pragma endregion "DATA Decoder Implementation"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#pragma region "ERROR Decoder Implementation"
+
+bool decode_error(struct codec_error_packet *packet) {
+    // ERROR decoding is not implemented yet; leave the packet unchanged.
+    (void)packet;
+    return false;
+}
+
+#pragma endregion "ERROR Decoder Implementation"

@@ -18,6 +18,14 @@ struct codec_data_packet {
     size_t payload_length;
 };
 
+struct codec_error_packet {
+    const uint8_t *buffer;
+    size_t length;
+    uint16_t error_code;
+    const char *error_message;
+    size_t error_message_length;
+};
+
 /*
  * Decode a host-order block number after validating length and opcode.
  * Reject NULL packet/buffer. Failure leaves all fields unchanged.
@@ -29,6 +37,7 @@ struct codec_data_packet {
  */
 bool decode_ack(struct codec_ack_packet *packet);
 bool decode_data(struct codec_data_packet *packet);
+bool decode_error(struct codec_error_packet *packet);
 
 /*
  * Validate and initialize buffer, length, and block_number=0 without decoding.
@@ -40,4 +49,7 @@ bool populate_ack_packet(struct codec_ack_packet *packet,
                          const uint8_t *buffer, size_t length);
 bool populate_data_packet(struct codec_data_packet *packet,
                           const uint8_t *buffer, size_t length);
+bool populate_error_packet(struct codec_error_packet *packet,
+                           const uint8_t *buffer, size_t length);
 #endif /* WIREFORGE_TFTP_CODEC_H */
+

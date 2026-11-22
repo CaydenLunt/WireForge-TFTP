@@ -13,7 +13,23 @@ if(BUILD_TESTING)
     add_executable(test_codec_packet tests/unit/test_codec_packet.c src/protocol/codec.c)
     target_include_directories(test_codec_packet PRIVATE include)
     target_compile_features(test_codec_packet PRIVATE c_std_99)
-    add_test(NAME codec_packet_contract COMMAND test_codec_packet)
+    set(codec_packet_tests
+        populate_ack_packet_rejects_null_output
+        populate_data_packet_rejects_null_output
+        decode_data_rejects_null_output
+        populate_ack_packet_initializes_fields
+        decode_data_validates_lengths_and_preserves_payload
+        populate_data_packet_validates_lengths
+        decode_data_rejects_invalid_opcode
+        decode_data_rejects_null_input
+        populate_ack_packet_preserves_output_on_failure
+        populate_data_packet_preserves_output_on_failure
+        populate_data_packet_initializes_fields
+        decode_data_accepts_empty_payload
+    )
+    foreach(test_name IN LISTS codec_packet_tests)
+        add_test(NAME ${test_name} COMMAND test_codec_packet ${test_name})
+    endforeach()
     add_executable(test_codec_ack
         tests/unit/test_codec_ack.c
         src/protocol/codec.c
