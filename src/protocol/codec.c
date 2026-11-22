@@ -201,30 +201,85 @@ static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length) {
  * Validate bounds before examining fields; no writes occur on rejection.
  */
 static bool codec_error_buffer_is_valid(const uint8_t *buffer, size_t length) {
+    // Require the header and terminator before reading (ERROR-FR-001, ERROR-SR-003).
+    // No DATA-style maximum length is imposed (ERROR-FR-009).
     if (length < 5) {
         return false;
     }
+    // has_opcode rejects NULL before reading and checks both opcode bytes
+    // (ERROR-SR-001/003, ERROR-FR-002).
     if (!has_opcode(buffer, length, TFTP_OPCODE_ERROR)) {
         return false;
     }
+    // Search only the message region; its first NUL must end the packet
+    // (ERROR-FR-004/005, ERROR-SR-003). A NUL at offset 4 permits an empty
+    // message when length is 5 (ERROR-FR-007). memchr leaves bytes unchanged
+    // and performs no text conversion (ERROR-FR-008, ERROR-SR-005).
     return memchr(buffer + 4, 0, length - 4) == buffer + length - 1;
 }
 
+/**
+ * @brief Decodes a TFTP ERROR packet.
+ *
+ * @details
+ * Wire layout follows RFC 1350, Section 5, Figure 5-4.
+ * Requirement IDs below are local project identifiers.
+ *
+ * Wire-format requirements:
+ * - ERROR-FR-001: Packet must be at least 5 bytes, including the terminator.
+ * - ERROR-FR-002: Opcode must equal 5.
+ * - ERROR-FR-003: Decode the 16-bit error code in network byte order.
+ * - ERROR-FR-004: Message begins at byte offset 4 and is NUL-terminated.
+ *
+ * Local API and validation requirements:
+ * - ERROR-FR-005: Require the first message NUL to be the final packet byte.
+ * - ERROR-FR-006: Expose message length excluding the terminator (length - 5).
+ * - ERROR-FR-007: Accept empty messages and all 16-bit codes, including unknowns.
+ * - ERROR-FR-008: Preserve message bytes without netascii validation/conversion.
+ * - ERROR-FR-009: Do not apply the DATA payload's 512-byte limit to ERROR.
+ * - ERROR-SR-001: Reject NULL input buffer.
+ * - ERROR-SR-002: Reject NULL output pointer.
+ * - ERROR-SR-003: Never read beyond the supplied buffer; bound the NUL search.
+ * - ERROR-SR-004: Do not modify any output fields on failure.
+ * - ERROR-SR-005: Do not modify input bytes.
+ * - ERROR-SR-006: Borrow the message within the input buffer without allocation.
+ *
+ * By design:
+ * - Validation completes before any decoded fields are assigned.
+ * - The caller supplies length readable bytes and keeps the buffer alive
+ *   while decoding and while accessing the borrowed message.
+ * - Successful decoding preserves buffer and length. Interpretation of the
+ *   error code and session-level error handling belong to the caller.
+ *
+ * @param packet Buffer, length, and decoded error code/message fields.
+ * @return true on success, false on failure.
+ */
 bool decode_error(struct codec_error_packet *packet) {
+    // Reject NULL output and finish validation before writing any fields
+    // (ERROR-SR-002/004).
     if (packet == NULL || !codec_error_buffer_is_valid(packet->buffer, packet->length)) {
         return false;
     }
+    // Decode network byte order without restricting the 16-bit code range
+    // (ERROR-FR-003/007).
     packet->error_code = get_error_code(packet->buffer);
+    // Borrow the original message at offset 4 without copying or modifying it
+    // (ERROR-FR-004/008, ERROR-SR-005/006).
     packet->error_message = (const char *)(packet->buffer + 4);
+    // Exclude the four-byte header and final NUL (ERROR-FR-006).
     packet->error_message_length = packet->length - 5;
     return true;
 }
 
 bool populate_error_packet(struct codec_error_packet *packet,
                            const uint8_t *buffer, size_t length) {
+    // Reuse wire validation and reject NULL output before initialization;
+    // rejection leaves every destination field unchanged (ERROR-SR-002/004).
     if (packet == NULL || !codec_error_buffer_is_valid(buffer, length)) {
         return false;
     }
+    // Initialize borrowed storage without modifying input (ERROR-SR-005/006).
+    // Decoded fields remain zero/NULL until decode_error succeeds.
     const struct codec_error_packet candidate = {buffer, length, 0, NULL, 0};
     *packet = candidate;
     return true;
