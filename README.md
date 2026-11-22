@@ -38,7 +38,7 @@ The implementation will reference the following RFCs:
 | [2349](https://www.rfc-editor.org/rfc/rfc2349) | TFTP Timeout Interval and Transfer Size Options | Timeout and transfer-size negotiation |
 | [7440](https://www.rfc-editor.org/rfc/rfc7440) | TFTP Windowsize Option | Windowed transfers |
 
-The current implementation covers ACK and DATA block-number decoding, validated packet initialization, and borrowed DATA payload access. The remaining protocol behavior and extensions are planned; no complete RFC compliance or interoperability claim is made.
+The current implementation covers ACK and DATA block-number decoding, validated packet initialization, borrowed DATA payload access, and ERROR code/message decoding. The remaining protocol behavior and extensions are planned; no complete RFC compliance or interoperability claim is made.
 
 ## Implemented Functionality
 
@@ -102,7 +102,7 @@ For direct integration, compile `src/protocol/codec.c` with your program and add
 ### Core Protocol
 
 - Read requests (RRQ) and write requests (WRQ)
-- DATA encoding, ERROR encoding and decoding, and ACK encoding
+- DATA, ERROR, and ACK encoding
 - Binary (`octet`) and text (`netascii`) transfer modes
 - Block numbering and acknowledgment handling
 - Timeout detection and retransmission

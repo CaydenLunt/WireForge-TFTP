@@ -6,6 +6,7 @@
 // #############################################################################
 
 #include "wireforge/tftp/codec.h"
+#include <string.h>
 
 static bool codec_ack_buffer_is_valid(const struct codec_ack_packet *packet);
 static bool codec_data_packet_header_is_valid(const uint8_t *buffer, size_t length);
@@ -207,10 +208,42 @@ static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length) {
 
 #pragma region "ERROR Decoder Implementation"
 
+/* RFC 1350 section 5, Figure 5-4. Require exactly one terminated string.
+ * Validate bounds before examining fields; no writes occur on rejection.
+ */
+static bool codec_error_buffer_is_valid(const uint8_t *buffer, size_t length) {
+    if (buffer == NULL || length < 5) {
+        return false;
+    }
+    if (get_opcode(buffer) != TFTP_OPCODE_ERROR) {
+        return false;
+    }
+    return memchr(buffer + 4, 0, length - 4) == buffer + length - 1;
+}
+
+/* Requires a validated ERROR packet with at least five readable bytes. */
+static uint16_t get_error_code(const uint8_t *buffer) {
+    return (uint16_t)(((uint16_t)buffer[2] << 8) | buffer[3]);
+}
+
 bool decode_error(struct codec_error_packet *packet) {
-    // ERROR decoding is not implemented yet; leave the packet unchanged.
-    (void)packet;
-    return false;
+    if (packet == NULL || !codec_error_buffer_is_valid(packet->buffer, packet->length)) {
+        return false;
+    }
+    packet->error_code = get_error_code(packet->buffer);
+    packet->error_message = (const char *)(packet->buffer + 4);
+    packet->error_message_length = packet->length - 5;
+    return true;
+}
+
+bool populate_error_packet(struct codec_error_packet *packet,
+                           const uint8_t *buffer, size_t length) {
+    if (packet == NULL || !codec_error_buffer_is_valid(buffer, length)) {
+        return false;
+    }
+    const struct codec_error_packet candidate = {buffer, length, 0, NULL, 0};
+    *packet = candidate;
+    return true;
 }
 
 #pragma endregion "ERROR Decoder Implementation"

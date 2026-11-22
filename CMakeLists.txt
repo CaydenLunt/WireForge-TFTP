@@ -50,4 +50,24 @@ if(BUILD_TESTING)
     foreach(test_name IN LISTS codec_ack_tests)
         add_test(NAME ${test_name} COMMAND test_codec_ack ${test_name})
     endforeach()
+    add_executable(test_codec_error tests/unit/test_codec_error.c src/protocol/codec.c)
+    target_include_directories(test_codec_error PRIVATE include)
+    target_compile_features(test_codec_error PRIVATE c_std_99)
+    set(codec_error_tests
+        decode_error_reads_code_and_message
+        decode_error_accepts_empty_message
+        decode_error_accepts_known_and_unknown_codes
+        decode_error_accepts_long_message
+        decode_error_rejects_null_output
+        populate_error_packet_rejects_null_output
+        error_packet_rejects_null_input
+        error_packet_rejects_truncated_header
+        error_packet_rejects_invalid_opcode
+        error_packet_rejects_missing_terminator
+        error_packet_rejects_trailing_bytes
+        populate_error_packet_initializes_fields
+    )
+    foreach(test_name IN LISTS codec_error_tests)
+        add_test(NAME ${test_name} COMMAND test_codec_error ${test_name})
+    endforeach()
 endif()

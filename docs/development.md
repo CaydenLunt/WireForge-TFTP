@@ -6,7 +6,7 @@
 - `src/protocol/codec.c`: ACK/DATA validation, block-number decoding, and packet initialization.
 - `tests/unit/test_codec_ack.c`: nine named ACK tests and their command-line dispatcher.
 - `tests/unit/test_codec_packet.c`: ACK/DATA initialization and DATA contract checks.
-- `CMakeLists.txt`: two C99 test executables and ten CTest entries.
+- `CMakeLists.txt`: three C99 test executables and 33 individually reported CTest entries.
 - `run-tests.sh`: POSIX configure/build/test helper; forwards arguments to CTest.
 - `.github/workflows/ci.yml`: Ubuntu 24.04 GCC/Clang build and test matrix, triggered by pushes, pull requests, and manual runs.
 
@@ -43,15 +43,39 @@ The IDs below are project identifiers used in source comments, not identifiers a
 
 Tests exercise the decoder independently of transfer state. Acceptance of ACK block zero does not implement the initial WRQ exchange. Full specification inventory, errata disposition, session requirements, interoperability, and fault-injection evidence remain outstanding.
 
+## ERROR decoding
+
+ERROR decoding follows [RFC 1350 section 5, Figure 5-4](https://www.rfc-editor.org/rfc/rfc1350#section-5).
+The decoder borrows the message without netascii validation or conversion and
+preserves unknown 16-bit codes. Empty messages are accepted and no DATA-size
+limit applies. Local strict framing requires the first NUL to be the final byte.
+
+| Behavior | CTest evidence |
+|---|---|
+| Code byte order, borrowed message, unchanged input | `decode_error_reads_code_and_message` |
+| Empty and long messages | `decode_error_accepts_empty_message`, `decode_error_accepts_long_message` |
+| Known and unknown codes | `decode_error_accepts_known_and_unknown_codes` |
+| Null output | `decode_error_rejects_null_output`, `populate_error_packet_rejects_null_output` |
+| Null input and short headers | `error_packet_rejects_null_input`, `error_packet_rejects_truncated_header` |
+| Both opcode bytes | `error_packet_rejects_invalid_opcode` |
+| Final terminator, no trailing bytes | `error_packet_rejects_missing_terminator`, `error_packet_rejects_trailing_bytes` |
+| Both entry points preserve every field on failure | All `error_packet_rejects_*` tests |
+| Validated initialization | `populate_error_packet_initializes_fields` |
+
+Local verification on November 21, 2026: WSL build via `sh run-tests.sh`;
+all 33 individually registered tests passed, including 12 ERROR tests.
+Existing unused RRQ/WRQ constants and an ACK test initializer still produce warnings.
+This does not verify session-level ERROR handling or interoperability.
+
 ## Known implementation limits
 
 Local verification on November 21, 2026: implementation revision `2d3d362266e1cbcbc299aeda8ba87d329a982886`, Windows x64, Visual Studio 18 2026 generator, MSVC 19.51.36243.0, Windows SDK 10.0.26100.0. Configured with `BUILD_TESTING=ON` in `build/windows-doc-sync`, built Debug, and ran `ctest --test-dir build/windows-doc-sync -C Debug --output-on-failure`: all ten tests passed. The build reported no compiler warnings. GCC/Clang, sanitizers, and remote CI were not verified in this run.
 
-`decode_data` uses `codec_data_packet`; `decode_ack` uses `codec_ack_packet`. DATA decoding validates the standard DATA length and opcode, and decodes the block number. DATA-FR-007 and DATA-FR-008 are implemented: payload points to buffer + 4 and payload_length equals length - 4. The codec_packet_contract test checks every payload length from 0 through 512, an exact four-byte empty packet, byte preservation, unchanged fields on rejection, and clearing DATA payload fields during initialization. The codec_packet_contract test covers population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
+`decode_data` uses `codec_data_packet`; `decode_ack` uses `codec_ack_packet`. DATA decoding validates the standard DATA length and opcode, and decodes the block number. DATA-FR-007 and DATA-FR-008 are implemented: payload points to buffer + 4 and payload_length equals length - 4. The named packet contract tests checks every payload length from 0 through 512, an exact four-byte empty packet, byte preservation, unchanged fields on rejection, and clearing DATA payload fields during initialization. The named packet contract tests covers population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
 
 codec_data_payload_is_valid retains its pointer-and-length interface and is called during DATA validation. It accepts payload lengths from zero through 512.
 
-There is no UDP transport, transfer state machine, packet encoding, RRQ/WRQ/ERROR handling, negotiated option support, file access, client, or server. No installable library or application target exists. Disabling `BUILD_TESTING` leaves no implementation targets.
+There is no UDP transport, transfer state machine, packet encoding, RRQ/WRQ decoding or session-level ERROR handling, negotiated option support, file access, client, or server. No installable library or application target exists. Disabling `BUILD_TESTING` leaves no implementation targets.
 
 ## Contribution and release expectations
 
