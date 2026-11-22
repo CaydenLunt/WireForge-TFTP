@@ -3,7 +3,8 @@
 ## Repository layout and scope
 
 - `include/wireforge/tftp/codec.h`: separate ACK, DATA, and ERROR packet structures and decoder contracts, and validated initialization helpers.
-- `src/protocol/codec.c`: ACK/DATA/ERROR validation, field decoding, and packet initialization. Private field helpers accept the start of a validated buffer and return the opcode, block number, or error code; they are not public API.
+- `src/protocol/codec.c`: ACK/DATA/ERROR validation, field decoding, and packet initialization. Private field helpers in `src/protocol/codec_helpers.h` accept the start of a validated buffer and return the opcode, block number, or error code; they are not public API.
+- `include/utils/byte_order.h`: guarded header for big-endian reads; requires two readable bytes. The private codec helper header also provides `has_opcode`, which checks null input and minimum length before reading.
 - `tests/unit/test_codec_ack.c`: nine named ACK tests and their command-line dispatcher.
 - `tests/unit/test_codec_packet.c`: ACK/DATA initialization and DATA contract checks.
 - `tests/unit/test_codec_error.c`: twelve named ERROR tests and their command-line dispatcher.

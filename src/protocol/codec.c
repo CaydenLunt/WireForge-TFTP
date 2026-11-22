@@ -6,6 +6,7 @@
 // #############################################################################
 
 #include "wireforge/tftp/codec.h"
+#include "codec_helpers.h"
 #include <string.h>
 
 static bool codec_ack_buffer_is_valid(const struct codec_ack_packet *packet);
@@ -25,18 +26,6 @@ static const uint8_t TFTP_ACK_PACKET_LENGTH = 4;
 // data vals
 static const size_t TFTP_DATA_PAYLOAD_MAX_LENGTH = 512;
 static const size_t TFTP_DATA_PACKET_HEADER_LENGTH = 4;
-
-/* Return the packet opcode in host order; requires two readable bytes. */
-static uint16_t get_opcode(const uint8_t *buffer) {
-    return (uint16_t)(((uint16_t)buffer[0] << 8) | buffer[1]);
-}
-
-/* Return the ACK/DATA block number in host order.
- * Caller must supply a validated ACK or DATA buffer with four readable bytes.
- */
-static uint16_t get_block_number(const uint8_t *buffer) {
-    return (uint16_t)(((uint16_t)buffer[2] << 8) | buffer[3]);
-}
 
 #pragma region "ACK Decoder Implementation"
 
@@ -106,11 +95,11 @@ bool populate_ack_packet(struct codec_ack_packet *packet,
  */
 static bool codec_ack_buffer_is_valid(const struct codec_ack_packet *packet) {
     // Validate pointers and exact wire length before reading (ACK-SR-001/002/003).
-    if (packet == NULL || packet->buffer == NULL ||
+    if (packet == NULL ||
         packet->length != TFTP_ACK_PACKET_LENGTH) {
         return false;
     }
-    return get_opcode(packet->buffer) == TFTP_OPCODE_ACK;
+    return has_opcode(packet->buffer, packet->length, TFTP_OPCODE_ACK);
 }
 
 #pragma endregion "ACK Decoder Implementation"
@@ -171,12 +160,12 @@ bool populate_data_packet(struct codec_data_packet *packet,
 
 static bool codec_data_packet_header_is_valid(const uint8_t *buffer, size_t length) {
     // Require a complete DATA packet before reading (DATA-FR-002, DATA-SR-003).
-    if (buffer == NULL || length < TFTP_DATA_PACKET_HEADER_LENGTH) {
+    if (length < TFTP_DATA_PACKET_HEADER_LENGTH) {
         return false;
     }
 
     // Reject an opcode other than 3 (DATA-FR-004).
-    if (get_opcode(buffer) != TFTP_OPCODE_DATA) {
+    if (!has_opcode(buffer, length, TFTP_OPCODE_DATA)) {
         return false;
     }
 
@@ -212,18 +201,13 @@ static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length) {
  * Validate bounds before examining fields; no writes occur on rejection.
  */
 static bool codec_error_buffer_is_valid(const uint8_t *buffer, size_t length) {
-    if (buffer == NULL || length < 5) {
+    if (length < 5) {
         return false;
     }
-    if (get_opcode(buffer) != TFTP_OPCODE_ERROR) {
+    if (!has_opcode(buffer, length, TFTP_OPCODE_ERROR)) {
         return false;
     }
     return memchr(buffer + 4, 0, length - 4) == buffer + length - 1;
-}
-
-/* Requires a validated ERROR packet with at least five readable bytes. */
-static uint16_t get_error_code(const uint8_t *buffer) {
-    return (uint16_t)(((uint16_t)buffer[2] << 8) | buffer[3]);
 }
 
 bool decode_error(struct codec_error_packet *packet) {
