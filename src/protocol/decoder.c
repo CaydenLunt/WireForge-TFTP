@@ -1,17 +1,14 @@
 // #############################################################################
-// # File: codec.c                                                             #
-// # Description: This file contains the implementation of the encoder/decoder #
-// #              Functions for the protocol.                                  #
+// # File: decoder.c                                                           #
+// # Description: TFTP packet validation, decoding, and initialization.        #
 // #                                                                           #
 // #############################################################################
 
 #include "wireforge/tftp/codec.h"
-#include "codec_helpers.h"
-#include <string.h>
+#include "utils/codec_helpers.h"
 
 static bool codec_ack_buffer_is_valid(const struct codec_ack_packet *packet);
 static bool codec_data_packet_header_is_valid(const uint8_t *buffer, size_t length);
-static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length);
 
 // Opcodes
 static const uint8_t TFTP_OPCODE_RRQ   = 1;
@@ -46,14 +43,6 @@ static const size_t TFTP_DATA_PACKET_HEADER_LENGTH = 4;
  * - ACK-SR-003: Never read beyond the supplied buffer.
  * - ACK-SR-004: Do not modify output on failure.
  *
- * By design:
- * - ACK-FR-007: The uint16_t output field represents every 16-bit block
- *   number. This guarantees the storage range, not successful decoding.
- * - ACK-SR-004: Validation performs no output writes, so rejection leaves
- *   the output unchanged. Keep any decoded-value assignment after validation.
- * - ACK-FR-003: The 4-byte wire length requires an explicit check; it is
- *   not guaranteed by sizeof(struct codec_ack_packet).
- *
  * @param packet Buffer, length, and decoded block number.
  *
  * @return true on success, false on failure.
@@ -75,31 +64,12 @@ bool populate_ack_packet(struct codec_ack_packet *packet,
     *packet = candidate;
     return true;
 }
-/**
- * @brief Validates the length and opcode of a TFTP ACK packet buffer.
- *
- * @details
- * Checks the input pointer and packet length before reading the opcode.
- * Does not decode the block number or modify the buffer.
- *
- * Requirements:
- * - ACK-FR-003: Reject packets whose length is not exactly 4 bytes.
- * - ACK-FR-005: Reject an opcode other than 4.
- * - ACK-SR-001: Reject a NULL input buffer.
- * - ACK-SR-003: Check length before reading within the supplied buffer.
- *
- * @param packet Packet with length readable buffer bytes, or NULL.
- *
- * @return true if the buffer is non-NULL, its length is 4, and its opcode
- *         is 4; false otherwise.
- */
+/* ACK-FR-003/005, ACK-SR-001/002/003: exact wire length and opcode. */
 static bool codec_ack_buffer_is_valid(const struct codec_ack_packet *packet) {
     // Validate pointers and exact wire length before reading (ACK-SR-001/002/003).
-    if (packet == NULL ||
-        packet->length != TFTP_ACK_PACKET_LENGTH) {
-        return false;
-    }
-    return has_opcode(packet->buffer, packet->length, TFTP_OPCODE_ACK);
+    return packet != NULL &&
+           codec_buffer_is_valid(packet->buffer, packet->length, TFTP_OPCODE_ACK,
+                                 TFTP_ACK_PACKET_LENGTH, TFTP_ACK_PACKET_LENGTH);
 }
 
 #pragma endregion "ACK Decoder Implementation"
@@ -159,36 +129,10 @@ bool populate_data_packet(struct codec_data_packet *packet,
 }
 
 static bool codec_data_packet_header_is_valid(const uint8_t *buffer, size_t length) {
-    // Require a complete DATA packet before reading (DATA-FR-002, DATA-SR-003).
-    if (length < TFTP_DATA_PACKET_HEADER_LENGTH) {
-        return false;
-    }
-
-    // Reject an opcode other than 3 (DATA-FR-004).
-    if (!has_opcode(buffer, length, TFTP_OPCODE_DATA)) {
-        return false;
-    }
-
-    return codec_data_payload_is_valid(buffer + TFTP_DATA_PACKET_HEADER_LENGTH, length - TFTP_DATA_PACKET_HEADER_LENGTH);
-}
-
-/**
- * @brief Validates a DATA payload pointer and length, excluding the packet header.
- * @param payload Non-NULL pointer to at least length readable payload bytes.
- * @param length Payload length in bytes; zero is valid.
- * @return true for a non-NULL payload with length 0 through 512; false otherwise.
- */
-static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length) {
-    if (payload == NULL) {
-        return false;
-    }
-
-    // size_t is unsigned, so only the upper bound needs checking (DATA-FR-009).
-    if (length > TFTP_DATA_PAYLOAD_MAX_LENGTH) {
-        return false;
-    }
-
-    return true;
+    // DATA-FR-002/003/004/009: four-byte header and at most 512 payload bytes.
+    return codec_buffer_is_valid(buffer, length, TFTP_OPCODE_DATA,
+                                 TFTP_DATA_PACKET_HEADER_LENGTH,
+                                 TFTP_DATA_PACKET_HEADER_LENGTH + TFTP_DATA_PAYLOAD_MAX_LENGTH);
 }
 
 #pragma endregion "DATA Decoder Implementation"
@@ -201,21 +145,10 @@ static bool codec_data_payload_is_valid(const uint8_t *payload, size_t length) {
  * Validate bounds before examining fields; no writes occur on rejection.
  */
 static bool codec_error_buffer_is_valid(const uint8_t *buffer, size_t length) {
-    // Require the header and terminator before reading (ERROR-FR-001, ERROR-SR-003).
-    // No DATA-style maximum length is imposed (ERROR-FR-009).
-    if (length < 5) {
-        return false;
-    }
-    // has_opcode rejects NULL before reading and checks both opcode bytes
-    // (ERROR-SR-001/003, ERROR-FR-002).
-    if (!has_opcode(buffer, length, TFTP_OPCODE_ERROR)) {
-        return false;
-    }
-    // Search only the message region; its first NUL must end the packet
-    // (ERROR-FR-004/005, ERROR-SR-003). A NUL at offset 4 permits an empty
-    // message when length is 5 (ERROR-FR-007). memchr leaves bytes unchanged
-    // and performs no text conversion (ERROR-FR-008, ERROR-SR-005).
-    return memchr(buffer + 4, 0, length - 4) == buffer + length - 1;
+    // ERROR-FR-001/002/004/005/007/009: header, then one possibly empty
+    // terminated message consuming the remaining buffer, with no size cap.
+    return codec_buffer_is_valid(buffer, length, TFTP_OPCODE_ERROR, 5, SIZE_MAX) &&
+           codec_string_end(buffer, length, 4, true) != NULL;
 }
 
 /**
@@ -243,13 +176,6 @@ static bool codec_error_buffer_is_valid(const uint8_t *buffer, size_t length) {
  * - ERROR-SR-004: Do not modify any output fields on failure.
  * - ERROR-SR-005: Do not modify input bytes.
  * - ERROR-SR-006: Borrow the message within the input buffer without allocation.
- *
- * By design:
- * - Validation completes before any decoded fields are assigned.
- * - The caller supplies length readable bytes and keeps the buffer alive
- *   while decoding and while accessing the borrowed message.
- * - Successful decoding preserves buffer and length. Interpretation of the
- *   error code and session-level error handling belong to the caller.
  *
  * @param packet Buffer, length, and decoded error code/message fields.
  * @return true on success, false on failure.
@@ -286,3 +212,82 @@ bool populate_error_packet(struct codec_error_packet *packet,
 }
 
 #pragma endregion "ERROR Decoder Implementation"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#pragma region "Shared Request Decoder Helpers"
+
+/* Validate before writing so malformed requests never partially update the
+ * caller's packet. Bound both terminator searches to the supplied buffer.
+ */
+static bool codec_decode_request(struct codec_request_block *packet,
+                                 uint16_t opcode) {
+    if (packet == NULL ||
+        !codec_buffer_is_valid(packet->buffer, packet->length, opcode, 6, SIZE_MAX)) {
+        return false;
+    }
+
+    const uint8_t *filename = packet->buffer + 2;
+    const uint8_t *filename_end = codec_string_end(packet->buffer, packet->length, 2, false);
+    if (filename_end == NULL || filename_end == filename) {
+        return false;
+    }
+
+    const uint8_t *mode = filename_end + 1;
+    const uint8_t *mode_end = codec_string_end(packet->buffer, packet->length,
+                                              (size_t)(mode - packet->buffer), true);
+    if (mode_end == NULL || mode_end == mode) {
+        return false;
+    }
+
+    packet->opcode = opcode;
+    packet->filename = filename;
+    packet->filename_length = (size_t)(filename_end - filename);
+    packet->mode = mode;
+    packet->mode_length = (size_t)(mode_end - mode);
+    return true;
+}
+
+static bool codec_populate_request(struct codec_request_block *packet,
+                                   const uint8_t *buffer, size_t length,
+                                   uint16_t opcode) {
+    struct codec_request_block candidate = {buffer, length, 0, NULL, 0, NULL, 0};
+    if (packet == NULL || !codec_decode_request(&candidate, opcode)) {
+        return false;
+    }
+    const struct codec_request_block initial = {buffer, length, 0, NULL, 0, NULL, 0};
+    *packet = initial;
+    return true;
+}
+
+#pragma endregion "Shared Request Decoder Helpers"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#pragma region "RRQ Decoder Implementation"
+
+bool decode_rrq(struct codec_request_block *packet) {
+    return codec_decode_request(packet, TFTP_OPCODE_RRQ);
+}
+
+bool populate_rrq_packet(struct codec_request_block *packet,
+                         const uint8_t *buffer, size_t length) {
+    return codec_populate_request(packet, buffer, length, TFTP_OPCODE_RRQ);
+}
+
+#pragma endregion "RRQ Decoder Implementation"
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#pragma region "WRQ Decoder Implementation"
+
+bool decode_wrq(struct codec_request_block *packet) {
+    return codec_decode_request(packet, TFTP_OPCODE_WRQ);
+}
+
+bool populate_wrq_packet(struct codec_request_block *packet,
+                         const uint8_t *buffer, size_t length) {
+    return codec_populate_request(packet, buffer, length, TFTP_OPCODE_WRQ);
+}
+
+#pragma endregion "WRQ Decoder Implementation"

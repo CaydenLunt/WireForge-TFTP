@@ -3,12 +3,13 @@
 ## Repository layout and scope
 
 - `include/wireforge/tftp/codec.h`: separate ACK, DATA, and ERROR packet structures and decoder contracts, and validated initialization helpers.
-- `src/protocol/codec.c`: ACK/DATA/ERROR validation, field decoding, and packet initialization. Private field helpers in `src/protocol/codec_helpers.h` accept the start of a validated buffer and return the opcode, block number, or error code; they are not public API.
+- `src/protocol/decoder.c`: ACK/DATA/ERROR/RRQ/WRQ validation, field decoding, and packet initialization. Packet-specific rules stay in their decoder regions; RRQ/WRQ share a request parsing region.
+- `src/protocol/helpers.c`: shared length/opcode validation and bounded string parsing, declared in `include/utils/codec_helpers.h`. That header also retains inline field readers. These helpers are implementation details rather than the public codec API.
 - `include/utils/byte_order.h`: guarded header for big-endian reads; requires two readable bytes. The private codec helper header also provides `has_opcode`, which checks null input and minimum length before reading.
 - `tests/unit/test_codec_ack.c`: nine named ACK tests and their command-line dispatcher.
 - `tests/unit/test_codec_packet.c`: ACK/DATA initialization and DATA contract checks.
 - `tests/unit/test_codec_error.c`: twelve named ERROR tests and their command-line dispatcher.
-- `CMakeLists.txt`: three C99 test executables and 33 individually reported CTest entries.
+- `CMakeLists.txt`: four C99 test executables and 34 individually reported CTest entries.
 - `run-tests.sh`: POSIX configure/build/test helper; forwards arguments to CTest.
 - `.github/workflows/ci.yml`: Ubuntu 24.04 GCC/Clang build and test matrix, triggered by pushes, pull requests, and manual runs.
 
@@ -70,7 +71,7 @@ The decoder borrows the message without netascii validation or conversion and
 preserves unknown 16-bit codes. Empty messages are accepted and no DATA-size
 limit applies. Local strict framing requires the first NUL to be the final byte.
 The ERROR IDs below match the requirements block and inline references in
-`src/protocol/codec.c`. They distinguish wire-format requirements from local API
+`src/protocol/decoder.c`. They distinguish wire-format requirements from local API
 policies. Bounded-read claims also rely on source inspection; these tests are not
 sanitizer or exhaustive memory-safety evidence.
 
@@ -99,7 +100,7 @@ Historical verification (not the current implementation) on November 21, 2026: i
 
 codec_data_payload_is_valid retains its pointer-and-length interface and is called during DATA validation. It accepts payload lengths from zero through 512.
 
-There is no UDP transport, transfer state machine, packet encoding, RRQ/WRQ decoding or session-level ERROR handling, negotiated option support, file access, client, or server. No installable library or application target exists. Disabling `BUILD_TESTING` leaves no implementation targets.
+There is no UDP transport, transfer state machine, packet encoding or session-level ERROR handling, negotiated option support, file access, client, or server. No installable library or application target exists. Disabling `BUILD_TESTING` leaves no implementation targets.
 
 ## Contribution and release expectations
 

@@ -42,7 +42,7 @@ The current implementation covers ACK and DATA block-number decoding, validated 
 
 ## Implemented Functionality
 
-The C [ACK decoder](src/protocol/codec.c), declared in [codec.h](include/wireforge/tftp/codec.h), provides:
+The C [ACK decoder](src/protocol/decoder.c), declared in [codec.h](include/wireforge/tftp/codec.h), provides:
 
 - Validation of the four-byte packet length and ACK opcode (`00 04`).
 - Rejection of null input and output pointers.
@@ -76,7 +76,7 @@ sh run-tests.sh
 sh run-tests.sh -V
 ```
 
-The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake builds three test executables: `test_codec_ack` (9 tests), `test_codec_packet` (12 tests), and `test_codec_error` (12 tests). Each of the 33 test functions has a separate CTest entry; table-driven cases within a function share its result. Each test reports its own result and can be selected by name, for example `sh run-tests.sh -R '^decode_ack_rejects_invalid_opcode$'`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
+The runner resolves paths relative to itself, uses `build/`, and forwards extra arguments to CTest. Build output in `build/` is ignored by Git. CMake builds four test executables: `test_codec_ack` (9 tests), `test_codec_packet` (12 tests), `test_codec_error` (12 tests), and `test_codec_request` (one entry covering RRQ/WRQ cases). Each of the 34 tests has a separate CTest entry; table-driven cases within a function share its result. Each test reports its own result and can be selected by name, for example `sh run-tests.sh -R '^decode_ack_rejects_invalid_opcode$'`. `BUILD_TESTING` defaults to `ON`; disabling it currently leaves no implementation build targets. There is no standalone library, client, or server target yet.
 
 ## Packet Decoder API
 
@@ -111,7 +111,7 @@ if (populate_error_packet(&error, error_bytes, sizeof(error_bytes)) &&
 
 The [ERROR tests](tests/unit/test_codec_error.c) exercise valid codes/messages, null pointers, truncated headers, invalid opcodes, missing terminators, trailing bytes, and unchanged output on failure.
 
-For direct integration, compile `src/protocol/codec.c` with your program and add `include/` to the header search path. The API is preliminary.
+For direct integration, compile `src/protocol/decoder.c` and `src/protocol/helpers.c` with your program and add `include/` to the header search path. The API is preliminary.
 
 ## Planned Features
 
@@ -171,7 +171,7 @@ The project prioritizes correctness, clarity, and testability over unnecessary a
 
 **Status: Initial Development — ACK/DATA/ERROR packet APIs and unit tests**
 
-ACK/DATA block decoding, ERROR code/message decoding, borrowed payload/message access, validated initialization, and three test executables with 33 CTest entries are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
+ACK/DATA block decoding, ERROR code/message decoding, borrowed payload/message access, validated initialization, RRQ/WRQ request decoding, and four test executables with 34 CTest entries are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
 
 The focused unit tests do not establish protocol-wide compliance, interoperability, or production readiness. Transfer integration tests, fault-injection tests, and a complete requirements compliance matrix remain future work.
 

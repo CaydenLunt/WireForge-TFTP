@@ -9,8 +9,14 @@ add_compile_options(
 
 include(CTest)
 
+set(codec_sources src/protocol/decoder.c src/protocol/helpers.c)
+
 if(BUILD_TESTING)
-    add_executable(test_codec_packet tests/unit/test_codec_packet.c src/protocol/codec.c)
+    add_executable(test_codec_request tests/unit/test_codec_request.c ${codec_sources})
+    target_include_directories(test_codec_request PRIVATE include)
+    target_compile_features(test_codec_request PRIVATE c_std_99)
+    add_test(NAME codec_request_validation COMMAND test_codec_request)
+    add_executable(test_codec_packet tests/unit/test_codec_packet.c ${codec_sources})
     target_include_directories(test_codec_packet PRIVATE include)
     target_compile_features(test_codec_packet PRIVATE c_std_99)
     set(codec_packet_tests
@@ -32,7 +38,7 @@ if(BUILD_TESTING)
     endforeach()
     add_executable(test_codec_ack
         tests/unit/test_codec_ack.c
-        src/protocol/codec.c
+        ${codec_sources}
     )
     target_include_directories(test_codec_ack PRIVATE include)
     target_compile_features(test_codec_ack PRIVATE c_std_99)
@@ -50,7 +56,7 @@ if(BUILD_TESTING)
     foreach(test_name IN LISTS codec_ack_tests)
         add_test(NAME ${test_name} COMMAND test_codec_ack ${test_name})
     endforeach()
-    add_executable(test_codec_error tests/unit/test_codec_error.c src/protocol/codec.c)
+    add_executable(test_codec_error tests/unit/test_codec_error.c ${codec_sources})
     target_include_directories(test_codec_error PRIVATE include)
     target_compile_features(test_codec_error PRIVATE c_std_99)
     set(codec_error_tests

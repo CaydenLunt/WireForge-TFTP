@@ -26,6 +26,16 @@ struct codec_error_packet {
     size_t error_message_length;
 };
 
+struct codec_request_block {
+    const uint8_t *buffer;
+    size_t length;
+    uint16_t opcode;
+    const uint8_t *filename;
+    size_t filename_length;
+    const uint8_t *mode;
+    size_t mode_length;
+};
+
 /*
  * Decode a host-order block number after validating length and opcode.
  * Reject NULL packet/buffer. Failure leaves all fields unchanged.
@@ -37,6 +47,16 @@ struct codec_error_packet {
  */
 bool decode_ack(struct codec_ack_packet *packet);
 bool decode_data(struct codec_data_packet *packet);
+/* Requests contain a nonempty filename and mode, each NUL-terminated.
+ * The mode terminator must end the packet (option extensions are unsupported).
+ * Mode bytes are preserved; supported transfer modes are a caller policy.
+ * Decoding borrows both strings and reports lengths excluding terminators.
+ * Populate validates and initializes decoded fields to zero/NULL.
+ * Both operations reject NULL pointers and preserve all fields on failure.
+ * Caller keeps length readable buffer bytes alive while using these views.
+ */
+bool decode_rrq(struct codec_request_block *packet);
+bool decode_wrq(struct codec_request_block *packet);
 
 /*
  * Validate and initialize buffer, length, and block_number=0 without decoding.
@@ -48,6 +68,10 @@ bool populate_ack_packet(struct codec_ack_packet *packet,
                          const uint8_t *buffer, size_t length);
 bool populate_data_packet(struct codec_data_packet *packet,
                           const uint8_t *buffer, size_t length);
+bool populate_rrq_packet(struct codec_request_block *packet,
+                         const uint8_t *buffer, size_t length);
+bool populate_wrq_packet(struct codec_request_block *packet,
+                         const uint8_t *buffer, size_t length);
 /*
  * ERROR requires opcode 5, at least five bytes, and a message whose first NUL
  * is the final packet byte. Empty messages and all 16-bit error codes are
