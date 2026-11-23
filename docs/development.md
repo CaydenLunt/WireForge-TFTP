@@ -9,8 +9,8 @@
 - `tests/unit/test_codec_ack.c`: nine named ACK tests and their command-line dispatcher.
 - `tests/unit/test_codec_packet.c`: ACK/DATA initialization and DATA contract checks.
 - `tests/unit/test_codec_error.c`: twelve named ERROR tests and their command-line dispatcher.
-- `tests/unit/test_codec_request.c`: both RRQ and WRQ paths, reported together as `codec_request_validation`.
-- `CMakeLists.txt`: four C99 test executables and 34 individually reported CTest entries.
+- `tests/unit/test_codec_request.c`: 25 named cases per request type, reported as 50 separate `rrq_*` and `wrq_*` CTest entries.
+- `CMakeLists.txt`: four C99 test executables and 83 individually reported CTest entries.
 - `run-tests.sh`: POSIX configure/build/test helper; forwards arguments to CTest.
 - `.github/workflows/ci.yml`: Ubuntu 24.04 GCC/Clang build and test matrix, triggered by pushes, pull requests, and manual runs.
 
@@ -18,7 +18,7 @@ There are no third-party runtime libraries or package lockfiles. Build tools and
 
 ## Build, select, and troubleshoot tests
 
-Follow the [README build instructions](../README.md#build-and-test). List test names with `ctest -N` in the build directory. Run one test with `ctest -C Debug --output-on-failure -R '^decode_ack_rejects_invalid_opcode$'`. The ACK, packet, and ERROR executables require exactly one test name; invoking those without a name or with an unknown name fails. `test_codec_request` takes no arguments and runs both request paths. Select it through CTest with `-R '^codec_request_validation$'`.
+Follow the [README build instructions](../README.md#build-and-test). List test names with `ctest -N` in the build directory. Run one test with `ctest -C Debug --output-on-failure -R '^decode_ack_rejects_invalid_opcode$'`. The ACK, packet, and ERROR executables require exactly one test name. The request executable requires a request type and case name, for example `./test_codec_request rrq rejects_options`. Missing arguments, unknown request types, and unknown case names fail. Select one request case through CTest with `-R '^rrq_rejects_options$'`, or all request cases with `-R '^(rrq|wrq)_'`.
 
 On Windows, use a Visual Studio developer shell with CMake and the C++ build tools installed (the project itself uses C). If CMake is not on PATH, invoke its installed executable by full path. Do not share a CMake cache between Windows and WSL or between generators. Use separate build directories, for example:
 
@@ -97,23 +97,27 @@ This does not verify session-level ERROR handling or interoperability.
 
 RRQ and WRQ use `codec_request_block`, including the input `buffer` and `length`. Their wrappers select opcode 1 or 2; the shared request parser validates both opcode bytes, then borrows nonempty filename and mode strings. Their lengths exclude terminators. The mode terminator must be the final byte. Option pairs are currently rejected. The decoder preserves mode bytes, including case, and does not select a transfer mode or validate filesystem paths.
 
-The `codec_request_validation` CTest entry exercises both decode/populate pairs:
+CTest registers each case separately for RRQ and WRQ. In the table below, replace `<request>` with `rrq` or `wrq`:
 
-| Behavior | Cases |
+| Behavior | CTest evidence |
 |---|---|
-| Successful decode | Correct opcode, borrowed pointers and lengths, mixed-case mode, unchanged input bytes |
-| Successful initialization | Buffer and length stored; decoded fields cleared |
-| Pointer rejection | Null output and null input with zero/nonzero length |
-| Opcode rejection | Nonzero high byte, DATA opcode, opposite request opcode |
-| String framing | Every truncated prefix of the valid fixture, empty filename/mode, missing terminators, missing mode |
-| Strict packet ending | Trailing byte and option-pair rejection |
-| Failure preservation | Decode and populate leave the destination unchanged for each malformed fixture |
+| Successful decode and initialization | `<request>_initializes_and_decodes_fields`: clear prefilled decoded fields, then verify opcode, borrowed pointers and lengths, mixed-case mode, unchanged input bytes |
+| Pointer rejection | `<request>_rejects_null_decode_output`, `<request>_rejects_null_populate_output`, `<request>_rejects_null_input`, `<request>_rejects_null_input_zero_length` |
+| Opcode rejection | `<request>_rejects_high_opcode_byte`, `<request>_rejects_data_opcode`, `<request>_rejects_other_request_opcode` |
+| Truncation | `<request>_rejects_truncated_prefix_0` through `<request>_rejects_truncated_prefix_9`, each independently registered |
+| String framing | `<request>_rejects_empty_filename`, `<request>_rejects_missing_filename_terminator`, `<request>_rejects_missing_mode`, `<request>_rejects_empty_mode`, `<request>_rejects_missing_mode_terminator` |
+| Strict packet ending | `<request>_rejects_trailing_bytes`, `<request>_rejects_options` |
+| Failure preservation | Every malformed-input case checks that both decode and populate leave the destination unchanged |
 
-These are table-driven cases under one CTest result, not individually registered tests. They do not establish session handling, arbitrary-length request coverage, supported-mode policy, or sanitizer evidence.
+These 50 request entries join nine ACK, twelve packet API/DATA, and twelve ERROR entries for 83 tests total. They do not establish session handling, arbitrary-length request coverage, supported-mode policy, or sanitizer evidence.
 
 ## Decoder organization
 
-`decoder.c` has separate ACK, DATA, ERROR, shared request helper, RRQ, and WRQ regions. Validation completes before decoded fields are assigned. `helpers.c` holds repeated wire mechanics:
+`decoder.c` has separate ACK, DATA, ERROR, shared request helper, RRQ, and WRQ regions. Validation completes before decoded fields are assigned.
+
+Request population calls `codec_request_buffer_is_valid` and initializes the destination without invoking a decoder or constructing decoded fields. Request decoding calls the same validator, reuses the validated filename terminator, and then assigns the decoded fields. Both calls independently validate the borrowed buffer, so a populate-then-decode sequence still scans its strings twice. The validator requires the mode terminator to end the packet, explicitly rejecting unsupported RFC 2347 options.
+
+`helpers.c` holds repeated wire mechanics:
 
 - `codec_buffer_is_valid` checks an inclusive length range and both opcode bytes. ACK passes an exact four-byte range; DATA passes 4 through 516; ERROR and requests use their minimum lengths with `SIZE_MAX` as the upper bound.
 - `codec_string_end` bounds the first-NUL search by buffer length and offset. Its final-byte option is used for ERROR messages and request modes. Empty strings are permitted by the helper; request parsing rejects them explicitly.
@@ -123,6 +127,8 @@ The old `codec_data_payload_is_valid` helper was removed. DATA now validates the
 Compile both `src/protocol/decoder.c` and `src/protocol/helpers.c` when integrating the codec. CMake's `codec_sources` list supplies both to each test executable. No `encoder.c` exists yet.
 
 ## Verification history
+
+On November 22, 2026, the request validation and test-registration changes now committed as `73bd330b393ed47faa17c6de78526f699e15704d` were configured and built in Debug through WSL using `sh protocols/wireforge-tftp/run-tests.sh` from the hub root. The environment uses CMake 3.28.3 and Ubuntu GCC 13.3.0. All 83 tests passed. During this documentation review, `ctest --test-dir protocols/wireforge-tftp/build --output-on-failure` passed all 83 again. The incremental build reported no compiler warnings; this was not a clean rebuild of unchanged test sources. MSVC, Clang, sanitizers, and remote CI were not verified for this revision.
 
 On November 22, 2026, the decoder/helper refactor was built in Debug with the Visual Studio 18 2026 generator, MSVC 19.51.36243.0, and Windows SDK 10.0.26100.0 in `build/windows-requests`. All 34 CTest entries passed with no compiler warnings reported. During the documentation review at revision `b59fc2ac81925050f294eae980406087fd25d59b`, the existing build's tests were rerun with `ctest --test-dir build/windows-requests -C Debug --output-on-failure`; all 34 passed again. GCC/Clang, sanitizers, and remote CI were not run during this review.
 
