@@ -15,7 +15,32 @@ if(BUILD_TESTING)
     add_executable(test_codec_request tests/unit/test_codec_request.c ${codec_sources})
     target_include_directories(test_codec_request PRIVATE include)
     target_compile_features(test_codec_request PRIVATE c_std_99)
-    add_test(NAME codec_request_validation COMMAND test_codec_request)
+    set(codec_request_tests
+        rejects_null_decode_output
+        rejects_null_populate_output
+        initializes_and_decodes_fields
+        rejects_null_input_zero_length
+        rejects_null_input
+        rejects_high_opcode_byte
+        rejects_data_opcode
+        rejects_other_request_opcode
+        rejects_empty_filename
+        rejects_missing_filename_terminator
+        rejects_missing_mode
+        rejects_empty_mode
+        rejects_missing_mode_terminator
+        rejects_trailing_bytes
+        rejects_options
+    )
+    foreach(prefix_length RANGE 0 9)
+        list(APPEND codec_request_tests rejects_truncated_prefix_${prefix_length})
+    endforeach()
+    foreach(request_type rrq wrq)
+        foreach(test_name IN LISTS codec_request_tests)
+            add_test(NAME ${request_type}_${test_name}
+                     COMMAND test_codec_request ${request_type} ${test_name})
+        endforeach()
+    endforeach()
     add_executable(test_codec_packet tests/unit/test_codec_packet.c ${codec_sources})
     target_include_directories(test_codec_packet PRIVATE include)
     target_compile_features(test_codec_packet PRIVATE c_std_99)

@@ -220,39 +220,55 @@ bool populate_error_packet(struct codec_error_packet *packet,
 /* Validate before writing so malformed requests never partially update the
  * caller's packet. Bound both terminator searches to the supplied buffer.
  */
-static bool codec_decode_request(struct codec_request_block *packet,
-                                 uint16_t opcode) {
-    if (packet == NULL ||
-        !codec_buffer_is_valid(packet->buffer, packet->length, opcode, 6, SIZE_MAX)) {
+static bool codec_request_buffer_is_valid(const uint8_t *buffer, size_t length,
+                                          uint16_t opcode,
+                                          const uint8_t **filename_terminator) {
+    if (!codec_buffer_is_valid(buffer, length, opcode, 6, SIZE_MAX)) {
         return false;
     }
 
-    const uint8_t *filename = packet->buffer + 2;
-    const uint8_t *filename_end = codec_string_end(packet->buffer, packet->length, 2, false);
+    const uint8_t *filename = buffer + 2;
+    const uint8_t *filename_end = codec_string_end(buffer, length, 2, false);
     if (filename_end == NULL || filename_end == filename) {
         return false;
     }
 
     const uint8_t *mode = filename_end + 1;
-    const uint8_t *mode_end = codec_string_end(packet->buffer, packet->length,
-                                              (size_t)(mode - packet->buffer), true);
+    // The mode terminator must end the packet: RFC 2347 options are unsupported.
+    const uint8_t *mode_end = codec_string_end(buffer, length,
+                                              (size_t)(mode - buffer), true);
     if (mode_end == NULL || mode_end == mode) {
         return false;
     }
 
+    if (filename_terminator != NULL) {
+        *filename_terminator = filename_end;
+    }
+    return true;
+}
+
+static bool codec_decode_request(struct codec_request_block *packet,
+                                 uint16_t opcode) {
+    const uint8_t *filename_end;
+    if (packet == NULL ||
+        !codec_request_buffer_is_valid(packet->buffer, packet->length, opcode,
+                                       &filename_end)) {
+        return false;
+    }
+    const uint8_t *filename = packet->buffer + 2;
+    const uint8_t *mode = filename_end + 1;
     packet->opcode = opcode;
     packet->filename = filename;
     packet->filename_length = (size_t)(filename_end - filename);
     packet->mode = mode;
-    packet->mode_length = (size_t)(mode_end - mode);
+    packet->mode_length = (size_t)((packet->buffer + packet->length - 1) - mode);
     return true;
 }
 
 static bool codec_populate_request(struct codec_request_block *packet,
                                    const uint8_t *buffer, size_t length,
                                    uint16_t opcode) {
-    struct codec_request_block candidate = {buffer, length, 0, NULL, 0, NULL, 0};
-    if (packet == NULL || !codec_decode_request(&candidate, opcode)) {
+    if (packet == NULL || !codec_request_buffer_is_valid(buffer, length, opcode, NULL)) {
         return false;
     }
     const struct codec_request_block initial = {buffer, length, 0, NULL, 0, NULL, 0};
