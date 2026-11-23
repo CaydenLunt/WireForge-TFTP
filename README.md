@@ -38,11 +38,23 @@ The implementation will reference the following RFCs:
 | [2349](https://www.rfc-editor.org/rfc/rfc2349) | TFTP Timeout Interval and Transfer Size Options | Timeout and transfer-size negotiation |
 | [7440](https://www.rfc-editor.org/rfc/rfc7440) | TFTP Windowsize Option | Windowed transfers |
 
-The current implementation covers ACK and DATA block-number decoding, validated packet initialization, borrowed DATA payload access, and ERROR code/message decoding. The remaining protocol behavior and extensions are planned; no complete RFC compliance or interoperability claim is made.
+The current implementation decodes ACK, DATA, ERROR, RRQ, and WRQ packets and provides validated packet initialization. Transfer handling and protocol extensions are planned; no complete RFC compliance or interoperability claim is made.
 
 ## Implemented Functionality
 
-The C [ACK decoder](src/protocol/decoder.c), declared in [codec.h](include/wireforge/tftp/codec.h), provides:
+The C [decoders](src/protocol/decoder.c), declared in [codec.h](include/wireforge/tftp/codec.h), cover all five base packet types:
+
+| Packet | Decoded fields | Validation |
+|---|---|---|
+| ACK | Block number | Opcode 4; exactly 4 bytes |
+| DATA | Block number and borrowed payload | Opcode 3; 4 through 516 bytes |
+| ERROR | Error code and borrowed message | Opcode 5; at least 5 bytes; message NUL ends packet |
+| RRQ | Opcode, borrowed filename and mode | Opcode 1; nonempty NUL-terminated strings; mode NUL ends packet |
+| WRQ | Opcode, borrowed filename and mode | Opcode 2; same string rules as RRQ |
+
+All decode and populate functions reject null pointers and preserve destination fields on failure. Input bytes are never modified. Request option extensions are rejected; mode interpretation and filename/path policy belong to the caller.
+
+ACK decoding specifically provides:
 
 - Validation of the four-byte packet length and ACK opcode (`00 04`).
 - Rejection of null input and output pointers.
@@ -91,7 +103,7 @@ bool decoded = decode_ack(&ack);
 
 `decode_ack` returns `true` after writing the decoded block number, or `false` for a null pointer, a length other than four, or an opcode other than ACK. On failure, a supplied output structure is unchanged. The caller must provide readable input storage for the supplied length and a valid writable output structure; non-null pointers alone do not establish memory validity. The decoder does not check whether the block number is expected by a transfer session.
 
-The decoders take distinct writable types: `decode_ack(struct codec_ack_packet *)`, `decode_data(struct codec_data_packet *)`, and `decode_error(struct codec_error_packet *)`. `decode_data(&packet)` validates the DATA opcode and standard length before writing the host-order block number. Successful decoding leaves `buffer` and `length` unchanged; failure leaves all fields unchanged.
+ACK, DATA, and ERROR use their respective `codec_ack_packet`, `codec_data_packet`, and `codec_error_packet` structures. RRQ and WRQ share `codec_request_block`. Each decoder takes a pointer to its writable packet structure. `decode_data(&packet)` validates the DATA opcode and standard length before writing the host-order block number. Successful decoding leaves `buffer` and `length` unchanged; failure leaves all fields unchanged.
 
 `populate_ack_packet(&packet, buffer, length)` and `populate_data_packet(&packet, buffer, length)` validate the appropriate opcode and length before initializing the borrowed buffer, length, and `block_number = 0`. They do not decode the block number. Null pointers or invalid packets return `false` without changing the destination. Keep the buffer alive and readable through decoding. Successful DATA decoding exposes a borrowed payload pointer at byte offset 4 and payload_length equal to packet length minus 4 (0 through 512). Keep the buffer alive while accessing the payload. Empty DATA has a one-past-end payload pointer that must not be dereferenced. DATA initialization clears payload to NULL and payload_length to zero. ACK packets have no payload fields.
 
@@ -111,14 +123,34 @@ if (populate_error_packet(&error, error_bytes, sizeof(error_bytes)) &&
 
 The [ERROR tests](tests/unit/test_codec_error.c) exercise valid codes/messages, null pointers, truncated headers, invalid opcodes, missing terminators, trailing bytes, and unchanged output on failure.
 
-For direct integration, compile `src/protocol/decoder.c` and `src/protocol/helpers.c` with your program and add `include/` to the header search path. The API is preliminary.
+### Read and write requests
+
+`populate_rrq_packet` and `populate_wrq_packet` validate the buffer, store `buffer` and `length`, and clear `opcode`, `filename`, `filename_length`, `mode`, and `mode_length` to zero or NULL. `decode_rrq` and `decode_wrq` validate again and fill these fields. Both strings are borrowed from the input; lengths exclude their NUL terminators. Keep the input alive while accessing either string.
+
+Requests require at least six bytes, the matching two-byte opcode, and nonempty filename and mode strings. The first mode NUL must end the packet: trailing bytes, including option pairs, are rejected. No DATA-style size cap is imposed. Mode spelling and case are preserved without checking supported modes or performing text conversion. Decoding a filename does not authorize file access or validate a filesystem path.
+
+```c
+const uint8_t request_bytes[] = {0, 1, 'f', 0, 'o', 'c', 't', 'e', 't', 0};
+struct codec_request_block request = {0};
+if (populate_rrq_packet(&request, request_bytes, sizeof(request_bytes)) &&
+    decode_rrq(&request)) {
+    /* request.opcode == 1; request.filename_length == 1. */
+    /* request.mode points to "octet"; request.mode_length == 5. */
+}
+```
+
+For WRQ, use opcode 2 with `populate_wrq_packet` and `decode_wrq`. The [request tests](tests/unit/test_codec_request.c) run both paths under the `codec_request_validation` CTest entry.
+
+### Source integration
+
+Compile [decoder.c](src/protocol/decoder.c) and [helpers.c](src/protocol/helpers.c) with your program and add `include/` to the header search path. `codec.h` remains the public interface. Shared length/opcode validation and bounded string parsing live in `helpers.c`; packet-specific rules and the shared RRQ/WRQ parser remain in named regions in `decoder.c`. Inline byte-order readers remain in the utility headers. There is no encoder implementation yet. The API is preliminary.
 
 ## Planned Features
 
 ### Core Protocol
 
-- Read requests (RRQ) and write requests (WRQ)
-- DATA, ERROR, and ACK encoding
+- Read-request and write-request session handling
+- RRQ, WRQ, DATA, ERROR, and ACK encoding
 - Binary (`octet`) and text (`netascii`) transfer modes
 - Block numbering and acknowledgment handling
 - Timeout detection and retransmission
@@ -143,7 +175,7 @@ For direct integration, compile `src/protocol/decoder.c` and `src/protocol/helpe
 
 ### Verification and Testing
 
-- Packet serialization and parsing tests beyond the existing ACK, DATA, and ERROR codec tests
+- Packet serialization and parsing tests beyond the existing ACK, DATA, ERROR, RRQ, and WRQ codec tests
 - Transfer state-machine tests
 - Client/server integration tests
 - Interoperability testing with established implementations
@@ -169,7 +201,7 @@ The project prioritizes correctness, clarity, and testability over unnecessary a
 
 ## Project Status
 
-**Status: Initial Development — ACK/DATA/ERROR packet APIs and unit tests**
+**Status: Initial Development - ACK/DATA/ERROR/RRQ/WRQ decoding and unit tests**
 
 ACK/DATA block decoding, ERROR code/message decoding, borrowed payload/message access, validated initialization, RRQ/WRQ request decoding, and four test executables with 34 CTest entries are implemented. The features under Planned Features remain development goals, including complete file transfers and protocol extensions.
 

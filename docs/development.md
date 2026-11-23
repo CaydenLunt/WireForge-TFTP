@@ -2,13 +2,14 @@
 
 ## Repository layout and scope
 
-- `include/wireforge/tftp/codec.h`: separate ACK, DATA, and ERROR packet structures and decoder contracts, and validated initialization helpers.
+- `include/wireforge/tftp/codec.h`: public ACK, DATA, ERROR, and shared request packet structures, five decoder entry points, and their validated initialization helpers.
 - `src/protocol/decoder.c`: ACK/DATA/ERROR/RRQ/WRQ validation, field decoding, and packet initialization. Packet-specific rules stay in their decoder regions; RRQ/WRQ share a request parsing region.
 - `src/protocol/helpers.c`: shared length/opcode validation and bounded string parsing, declared in `include/utils/codec_helpers.h`. That header also retains inline field readers. These helpers are implementation details rather than the public codec API.
 - `include/utils/byte_order.h`: guarded header for big-endian reads; requires two readable bytes. The private codec helper header also provides `has_opcode`, which checks null input and minimum length before reading.
 - `tests/unit/test_codec_ack.c`: nine named ACK tests and their command-line dispatcher.
 - `tests/unit/test_codec_packet.c`: ACK/DATA initialization and DATA contract checks.
 - `tests/unit/test_codec_error.c`: twelve named ERROR tests and their command-line dispatcher.
+- `tests/unit/test_codec_request.c`: both RRQ and WRQ paths, reported together as `codec_request_validation`.
 - `CMakeLists.txt`: four C99 test executables and 34 individually reported CTest entries.
 - `run-tests.sh`: POSIX configure/build/test helper; forwards arguments to CTest.
 - `.github/workflows/ci.yml`: Ubuntu 24.04 GCC/Clang build and test matrix, triggered by pushes, pull requests, and manual runs.
@@ -17,7 +18,7 @@ There are no third-party runtime libraries or package lockfiles. Build tools and
 
 ## Build, select, and troubleshoot tests
 
-Follow the [README build instructions](../README.md#build-and-test). List test names with `ctest -N` in the build directory. Run one test with `ctest -C Debug --output-on-failure -R '^decode_ack_rejects_invalid_opcode$'`. Each test executable requires exactly one test name; invoking it without a name or with an unknown name fails.
+Follow the [README build instructions](../README.md#build-and-test). List test names with `ctest -N` in the build directory. Run one test with `ctest -C Debug --output-on-failure -R '^decode_ack_rejects_invalid_opcode$'`. The ACK, packet, and ERROR executables require exactly one test name; invoking those without a name or with an unknown name fails. `test_codec_request` takes no arguments and runs both request paths. Select it through CTest with `-R '^codec_request_validation$'`.
 
 On Windows, use a Visual Studio developer shell with CMake and the C++ build tools installed (the project itself uses C). If CMake is not on PATH, invoke its installed executable by full path. Do not share a CMake cache between Windows and WSL or between generators. Use separate build directories, for example:
 
@@ -48,8 +49,8 @@ Tests exercise the decoder independently of transfer state. Acceptance of ACK bl
 
 ## DATA requirements and evidence
 
-| IDs | IDs | Behavior | CTest evidence |
-|---|---|---|---|
+| IDs | Behavior | CTest evidence |
+|---|---|---|
 | DATA-FR-002/003/009 | Packet lengths 4 through 516; payload lengths 0 through 512 | `decode_data_validates_lengths_and_preserves_payload`, `populate_data_packet_validates_lengths` |
 | DATA-FR-004 | Both opcode bytes validated | `decode_data_rejects_invalid_opcode` |
 | DATA-FR-005/006 | Host-order 16-bit block | `decode_data_validates_lengths_and_preserves_payload` checks 0xabcd; full boundary enumeration is not tested for DATA |
@@ -87,18 +88,47 @@ sanitizer or exhaustive memory-safety evidence.
 | ERROR-SR-004 | Both entry points preserve every field on failure | All `error_packet_rejects_*` tests |
 | Local initialization contract | Validated initialization | `populate_error_packet_initializes_fields` |
 
-Local verification on November 21, 2026 of revision `980a26235b7d648400c8e762bdca5d2e66df77cf`: WSL build via `sh run-tests.sh`;
+Historical verification on November 21, 2026 of revision `980a26235b7d648400c8e762bdca5d2e66df77cf`: WSL build via `sh run-tests.sh`;
 all 33 individually registered tests passed, including 12 ERROR tests.
 This build reported unused RRQ/WRQ constant warnings. The existing ACK test initializer warning can also appear when that test source is rebuilt.
 This does not verify session-level ERROR handling or interoperability.
 
-## Known implementation limits
+## Request decoding and evidence
+
+RRQ and WRQ use `codec_request_block`, including the input `buffer` and `length`. Their wrappers select opcode 1 or 2; the shared request parser validates both opcode bytes, then borrows nonempty filename and mode strings. Their lengths exclude terminators. The mode terminator must be the final byte. Option pairs are currently rejected. The decoder preserves mode bytes, including case, and does not select a transfer mode or validate filesystem paths.
+
+The `codec_request_validation` CTest entry exercises both decode/populate pairs:
+
+| Behavior | Cases |
+|---|---|
+| Successful decode | Correct opcode, borrowed pointers and lengths, mixed-case mode, unchanged input bytes |
+| Successful initialization | Buffer and length stored; decoded fields cleared |
+| Pointer rejection | Null output and null input with zero/nonzero length |
+| Opcode rejection | Nonzero high byte, DATA opcode, opposite request opcode |
+| String framing | Every truncated prefix of the valid fixture, empty filename/mode, missing terminators, missing mode |
+| Strict packet ending | Trailing byte and option-pair rejection |
+| Failure preservation | Decode and populate leave the destination unchanged for each malformed fixture |
+
+These are table-driven cases under one CTest result, not individually registered tests. They do not establish session handling, arbitrary-length request coverage, supported-mode policy, or sanitizer evidence.
+
+## Decoder organization
+
+`decoder.c` has separate ACK, DATA, ERROR, shared request helper, RRQ, and WRQ regions. Validation completes before decoded fields are assigned. `helpers.c` holds repeated wire mechanics:
+
+- `codec_buffer_is_valid` checks an inclusive length range and both opcode bytes. ACK passes an exact four-byte range; DATA passes 4 through 516; ERROR and requests use their minimum lengths with `SIZE_MAX` as the upper bound.
+- `codec_string_end` bounds the first-NUL search by buffer length and offset. Its final-byte option is used for ERROR messages and request modes. Empty strings are permitted by the helper; request parsing rejects them explicitly.
+
+The old `codec_data_payload_is_valid` helper was removed. DATA now validates the complete packet length directly. Inline opcode, block-number, error-code, and byte-order readers remain in the utility headers. These internal helpers do not replace the public validation contracts.
+
+Compile both `src/protocol/decoder.c` and `src/protocol/helpers.c` when integrating the codec. CMake's `codec_sources` list supplies both to each test executable. No `encoder.c` exists yet.
+
+## Verification history
+
+On November 22, 2026, the decoder/helper refactor was built in Debug with the Visual Studio 18 2026 generator, MSVC 19.51.36243.0, and Windows SDK 10.0.26100.0 in `build/windows-requests`. All 34 CTest entries passed with no compiler warnings reported. During the documentation review at revision `b59fc2ac81925050f294eae980406087fd25d59b`, the existing build's tests were rerun with `ctest --test-dir build/windows-requests -C Debug --output-on-failure`; all 34 passed again. GCC/Clang, sanitizers, and remote CI were not run during this review.
 
 Historical verification (not the current implementation) on November 21, 2026: implementation revision `2d3d362266e1cbcbc299aeda8ba87d329a982886`, Windows x64, Visual Studio 18 2026 generator, MSVC 19.51.36243.0, Windows SDK 10.0.26100.0. Configured with `BUILD_TESTING=ON` in `build/windows-doc-sync`, built Debug, and ran `ctest --test-dir build/windows-doc-sync -C Debug --output-on-failure`: all ten tests passed. The build reported no compiler warnings. GCC/Clang, sanitizers, and remote CI were not verified in this run.
 
-`decode_data` uses `codec_data_packet`; `decode_ack` uses `codec_ack_packet`. DATA decoding validates the standard DATA length and opcode, and decodes the block number. DATA-FR-007 and DATA-FR-008 are implemented: payload points to buffer + 4 and payload_length equals length - 4. The named packet contract tests check every payload length from 0 through 512, an exact four-byte empty packet, byte preservation, unchanged fields on rejection, and clearing DATA payload fields during initialization. The named packet contract tests cover population, DATA length boundaries, null pointers, invalid opcodes, and preservation on failure.
-
-codec_data_payload_is_valid retains its pointer-and-length interface and is called during DATA validation. It accepts payload lengths from zero through 512.
+## Known implementation limits
 
 There is no UDP transport, transfer state machine, packet encoding or session-level ERROR handling, negotiated option support, file access, client, or server. No installable library or application target exists. Disabling `BUILD_TESTING` leaves no implementation targets.
 
